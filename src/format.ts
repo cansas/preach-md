@@ -506,20 +506,35 @@ export class PreachFormatToolbar {
 	}
 
 	private position(rect: DOMRect): void {
-		const TOOLBAR_H = 52; // approximate toolbar height including margin
-		const MARGIN = 8;
+		// Clearance has to make room for iOS's own selection menu
+		// (Copy / Look Up / Translate), which sits ~44px above the
+		// selection by default. We leave 80px of space so both fit.
+		const CLEARANCE = 80;
 		const vpW = window.innerWidth;
+		const vpH = window.innerHeight;
 
 		const toolbarW = this.toolbarEl.offsetWidth || 200;
+		const toolbarH = this.toolbarEl.offsetHeight || 44;
+
 		const midX = rect.left + rect.width / 2;
 		let left = midX - toolbarW / 2;
 		left = Math.max(8, Math.min(vpW - toolbarW - 8, left));
 
+		// Prefer below the selection (iOS gets its preferred above spot).
+		// Fall back to above if below has no room. Final fallback to
+		// viewport edge if the selection occupies most of the screen.
+		const spaceBelow = vpH - rect.bottom;
+		const spaceAbove = rect.top;
+
 		let top: number;
-		if (rect.top > TOOLBAR_H + MARGIN) {
-			top = rect.top - TOOLBAR_H - MARGIN;
+		if (spaceBelow >= toolbarH + CLEARANCE) {
+			top = rect.bottom + CLEARANCE;
+		} else if (spaceAbove >= toolbarH + CLEARANCE) {
+			top = rect.top - toolbarH - CLEARANCE;
 		} else {
-			top = rect.bottom + MARGIN;
+			top = spaceBelow > spaceAbove
+				? vpH - toolbarH - 8
+				: 8;
 		}
 
 		this.toolbarEl.style.left = `${left}px`;

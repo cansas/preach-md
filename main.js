@@ -1349,18 +1349,23 @@ var PreachFormatToolbar = class {
     this.show();
   }
   position(rect) {
-    const TOOLBAR_H = 52;
-    const MARGIN = 8;
+    const CLEARANCE = 80;
     const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
     const toolbarW = this.toolbarEl.offsetWidth || 200;
+    const toolbarH = this.toolbarEl.offsetHeight || 44;
     const midX = rect.left + rect.width / 2;
     let left = midX - toolbarW / 2;
     left = Math.max(8, Math.min(vpW - toolbarW - 8, left));
+    const spaceBelow = vpH - rect.bottom;
+    const spaceAbove = rect.top;
     let top;
-    if (rect.top > TOOLBAR_H + MARGIN) {
-      top = rect.top - TOOLBAR_H - MARGIN;
+    if (spaceBelow >= toolbarH + CLEARANCE) {
+      top = rect.bottom + CLEARANCE;
+    } else if (spaceAbove >= toolbarH + CLEARANCE) {
+      top = rect.top - toolbarH - CLEARANCE;
     } else {
-      top = rect.bottom + MARGIN;
+      top = spaceBelow > spaceAbove ? vpH - toolbarH - 8 : 8;
     }
     this.toolbarEl.style.left = `${left}px`;
     this.toolbarEl.style.top = `${top}px`;
