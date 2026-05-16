@@ -12,7 +12,7 @@
 	--preach-font-size: 1.35rem;
 	--preach-line-height: 1.85;
 	--preach-max-width: 780px;
-	--preach-content-padding: calc(var(--preach-top-bar-height) + env(safe-area-inset-top, 0px) + 1.5rem) 1.75rem 8rem;
+	--preach-content-padding: calc(env(safe-area-inset-top, 0px) + 4rem) 1.75rem 8rem;
 
 	/* Colours */
 	--preach-bg: #0e0e0e;
@@ -35,13 +35,9 @@
 	--preach-scripture-expand-text: #d8eaf5;
 	--preach-scripture-verse-num-color: #7aacce;
 
-	/* Top bar */
-	--preach-top-bar-height: 60px;
-	--preach-top-btn-size: 44px;
-	--preach-top-btn-bg: rgba(255, 255, 255, 0.08);
-	--preach-top-btn-hover-bg: rgba(255, 255, 255, 0.15);
-	--preach-top-btn-color: #ccc;
-	--preach-top-btn-radius: 10px;
+	/* Corner buttons */
+	--preach-corner-btn-size: 44px;
+	--preach-corner-btn-color: rgba(255, 255, 255, 0.75);
 
 	/* Timer */
 	--preach-timer-bg: rgba(255, 255, 255, 0.07);
@@ -196,92 +192,83 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Top bar                                                              */
+/* Timer - top-centre, always visible                                   */
 /* ------------------------------------------------------------------ */
 
-.preach-top-bar {
+.preach-timer-corner {
 	position: absolute;
-	top: 0;
+	top: calc(env(safe-area-inset-top, 0px) + 10px);
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 20;
+	pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Bottom corner buttons - transparent, icon-only, auto-fade           */
+/* ------------------------------------------------------------------ */
+
+.preach-bottom-btns {
+	position: absolute;
+	bottom: 0;
 	left: 0;
 	right: 0;
 	z-index: 20;
 	display: flex;
-	align-items: center;
+	align-items: flex-end;
 	justify-content: space-between;
-	padding-top: env(safe-area-inset-top, 0px);
-	padding-left: 8px;
-	padding-right: 8px;
-	padding-bottom: 6px;
-	background: color-mix(in srgb, var(--background-primary, #0e0e0e) 70%, transparent);
-	-webkit-backdrop-filter: blur(20px);
-	backdrop-filter: blur(20px);
-	pointer-events: none; /* let taps fall through to scroll area by default */
-}
-
-.preach-top-bar-group {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	pointer-events: all;
-}
-
-.preach-top-bar-group--left {
-	flex: 1;
-	justify-content: flex-start;
-}
-
-.preach-top-bar-group--centre {
-	flex: 0 0 auto;
-	pointer-events: all;
-}
-
-.preach-top-bar-group--right {
-	flex: 1;
-	justify-content: flex-end;
-}
-
-/* Fadeable controls: fade out when idle, reveal on interaction */
-.preach-top-btn--fadeable {
+	padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+	padding-left: 14px;
+	padding-right: 14px;
+	pointer-events: none; /* let taps fall through to content by default */
 	opacity: 1;
 	transition: opacity 150ms ease-in;
 }
 
-.preach-top-bar--idle .preach-top-btn--fadeable {
+/* Idle state: fade out */
+.preach-bottom-btns--idle {
 	opacity: 0;
 	transition: opacity 300ms ease-out;
-	pointer-events: none;
+	pointer-events: none !important;
 }
 
-/* Individual top-bar buttons */
-.preach-top-btn {
-	width: var(--preach-top-btn-size);
-	height: var(--preach-top-btn-size);
+/* Individual corner buttons - transparent, icon-only */
+.preach-corner-btn {
+	width: var(--preach-corner-btn-size);
+	height: var(--preach-corner-btn-size);
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	background: var(--preach-top-btn-bg);
-	color: var(--preach-top-btn-color);
+	background: transparent;
+	color: var(--preach-corner-btn-color);
 	border: none;
-	border-radius: var(--preach-top-btn-radius);
+	border-radius: 10px;
 	cursor: pointer;
 	pointer-events: all;
 	-webkit-tap-highlight-color: transparent;
 	touch-action: manipulation;
-	transition: background 0.15s;
 	flex-shrink: 0;
 }
 
-.preach-top-btn:active,
-.preach-top-btn:hover {
-	background: var(--preach-top-btn-hover-bg);
+.preach-corner-btn:active {
+	opacity: 0.6;
 }
 
-/* Exit wrap: column so chip sits above button */
+/* Exit wrap: column layout so chip pops upward above the X button */
 .preach-exit-wrap {
 	display: flex;
 	flex-direction: column;
 	align-items: flex-end;
-	gap: 2px;
+	gap: 4px;
+	pointer-events: all;
+}
+
+/* Right-side group: edit button + exit wrap side by side */
+.preach-bottom-right {
+	display: flex;
+	align-items: flex-end;
+	gap: 4px;
+	pointer-events: all;
 }
 
 /* ------------------------------------------------------------------ */
@@ -455,6 +442,7 @@
 	pointer-events: none;
 	transition: opacity 0.15s;
 	white-space: nowrap;
+	/* chip pops upward; hidden by default, appears above the exit button */
 }
 
 .preach-exit-chip--visible {
@@ -473,7 +461,7 @@
 	display: flex;
 	align-items: flex-start;
 	justify-content: flex-start;
-	padding: calc(var(--preach-top-bar-height) + env(safe-area-inset-top, 0px) + 10px) 0 0 10px;
+	padding: calc(env(safe-area-inset-top, 0px) + 60px) 0 0 10px;
 	-webkit-backdrop-filter: blur(4px);
 	backdrop-filter: blur(4px);
 	transition: opacity 0.15s;
@@ -591,36 +579,25 @@ body.preach-md-active .workspace-drawer-vault-switcher {
 }
 
 /* ------------------------------------------------------------------ */
-/* Format mode                                                          */
+/* Editor format toolbar (injected into editor leaf when preach active) */
 /* ------------------------------------------------------------------ */
 
-/* Active state: subtle accent border on the scroll content */
-.preach-content.preach-format-active {
-	outline: 2px solid var(--preach-accent);
-	outline-offset: -2px;
-}
-
-/* Format toolbar: centred, floats below the top bar */
-.preach-format-toolbar {
+.preach-editor-format-bar {
 	position: absolute;
-	top: calc(var(--preach-top-bar-height) + env(safe-area-inset-top, 0px) + 6px);
+	bottom: calc(20px + env(safe-area-inset-bottom, 0px));
 	left: 50%;
 	transform: translateX(-50%);
-	z-index: 25;
+	z-index: 100;
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	background: rgba(30, 30, 30, 0.92);
-	-webkit-backdrop-filter: blur(12px);
-	backdrop-filter: blur(12px);
+	background: color-mix(in srgb, var(--background-primary, #1e1e1e) 70%, transparent);
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
 	border-radius: 12px;
 	padding: 8px 12px;
-	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
 	pointer-events: all;
-}
-
-.preach-format-toolbar--hidden {
-	display: none;
 }
 
 .preach-fmt-btn {
@@ -629,13 +606,13 @@ body.preach-md-active .workspace-drawer-vault-switcher {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	background: rgba(255, 255, 255, 0.1);
-	color: #e0dbd5;
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--text-normal, #e0dbd5);
 	border: none;
 	border-radius: 8px;
 	font-family: Georgia, "Times New Roman", serif;
 	font-size: 1rem;
-	font-weight: 700;
+	font-weight: 400;
 	cursor: pointer;
 	-webkit-tap-highlight-color: transparent;
 	touch-action: manipulation;
@@ -645,26 +622,27 @@ body.preach-md-active .workspace-drawer-vault-switcher {
 
 .preach-fmt-btn:active,
 .preach-fmt-btn:hover {
-	background: rgba(255, 255, 255, 0.22);
+	background: rgba(255, 255, 255, 0.18);
 }
 
-.preach-fmt-btn--done {
+/* B - bold weight */
+.preach-fmt-btn--bold {
+	font-weight: 700;
+}
+
+/* I - italic style */
+.preach-fmt-btn--italic {
+	font-style: italic;
+}
+
+/* U - underlined */
+.preach-fmt-btn--underline {
+	text-decoration: underline;
+}
+
+/* Highlight - uses inline icon, no special font styling needed */
+.preach-fmt-btn--highlight {
 	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-	font-size: 0.85rem;
-	font-weight: 500;
-	color: var(--preach-accent);
-	background: rgba(201, 168, 76, 0.12);
-}
-
-.preach-fmt-btn--done:active,
-.preach-fmt-btn--done:hover {
-	background: rgba(201, 168, 76, 0.25);
-}
-
-/* Format button active state in top bar */
-.preach-top-btn--format-on {
-	background: rgba(201, 168, 76, 0.25);
-	color: var(--preach-accent);
 }
 
 /* ------------------------------------------------------------------ */
