@@ -13,6 +13,10 @@ export interface Block {
 	content: string;
 	/** Whether this block is a plain paragraph (eligible for highlight). */
 	highlightable: boolean;
+	/** 0-indexed line number in the source file where this block begins. */
+	startLine: number;
+	/** 0-indexed character offset from start of file where this block begins. */
+	startOffset: number;
 }
 
 /**
@@ -44,6 +48,10 @@ export function parseBlocks(markdown: string): Block[] {
 	let i = 0;
 	let charOffset = bodyStart;
 
+	// Count how many lines the frontmatter consumed so startLine is file-absolute
+	const frontmatterLineCount = markdown.slice(0, bodyStart).split("\n").length - 1;
+	let lineNumber = frontmatterLineCount;
+
 	while (i < lines.length) {
 		const line = lines[i];
 
@@ -56,11 +64,13 @@ export function parseBlocks(markdown: string): Block[] {
 			// Blank line or inside fence - advance
 			charOffset += line.length + 1;
 			i++;
+			lineNumber++;
 			continue;
 		}
 
 		// Collect a contiguous block (non-blank lines)
 		const blockStartOffset = charOffset;
+		const blockStartLine = lineNumber;
 		const blockLines: string[] = [];
 		let inFence: boolean = inCodeFence;
 
@@ -71,6 +81,7 @@ export function parseBlocks(markdown: string): Block[] {
 			blockLines.push(lines[i]);
 			charOffset += lines[i].length + 1;
 			i++;
+			lineNumber++;
 		}
 
 		const blockText = blockLines.join("\n");
@@ -99,6 +110,8 @@ export function parseBlocks(markdown: string): Block[] {
 			end: blockEnd,
 			content: blockText,
 			highlightable,
+			startLine: blockStartLine,
+			startOffset: blockStartOffset,
 		});
 	}
 

@@ -86,6 +86,9 @@ export class PreachView extends ItemView {
 	private highlightManager!: HighlightManager;
 	private scriptureExpander!: ScriptureExpander;
 
+	// Parsed blocks (kept in sync after each renderFile call)
+	private blocks: ReturnType<typeof parseBlocks> = [];
+
 	// View header (hidden while preach mode is active)
 	private viewHeaderEl: HTMLElement | null = null;
 
@@ -314,6 +317,9 @@ export class PreachView extends ItemView {
 		const markdown = await this.app.vault.read(file);
 		const blocks = parseBlocks(markdown);
 
+		// Keep a reference for scroll-sync in goToEdit
+		this.blocks = blocks;
+
 		// Store blocks in highlight manager
 		this.highlightManager.attachBlocks(blocks);
 
@@ -460,11 +466,27 @@ export class PreachView extends ItemView {
 		this.leaf.detach();
 	}
 
-	// Edit round-trip: open the file in an edit leaf, preserving scroll
+	// Find the 0-indexed source line of the topmost visible preach block.
+	private getTopmostVisibleLine(): number | null {
+		const blockEls = this.scrollEl.querySelectorAll<HTMLElement>(".preach-block");
+		for (const el of Array.from(blockEls)) {
+			if (el.getBoundingClientRect().bottom > 0) {
+				const idx = parseInt(el.dataset.blockIndex ?? "", 10);
+				if (!isNaN(idx) && this.blocks[idx] !== undefined) {
+					return this.blocks[idx].startLine;
+				}
+			}
+		}
+		return null;
+	}
+
+	// Edit round-trip: open the file in an edit leaf, scrolled to current position.
 	private goToEdit(): void {
 		if (!this.file) return;
 
 		this.savedScrollTop = this.scrollEl.scrollTop;
+
+		const startLine = this.getTopmostVisibleLine();
 
 		const existingLeaf = this.app.workspace
 			.getLeavesOfType("markdown")
@@ -475,11 +497,19 @@ export class PreachView extends ItemView {
 
 		if (existingLeaf) {
 			this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+			if (startLine !== null) {
+				setTimeout(() => {
+					(existingLeaf.view as { setEphemeralState?: (s: object) => void })
+						.setEphemeralState?.({ line: startLine });
+				}, 0);
+			}
 			setTimeout(() => this.maybeInjectBackPill(existingLeaf), 0);
 		} else {
 			const leaf = this.app.workspace.getLeaf("tab");
 			if (this.file) {
-				void leaf.openFile(this.file, { active: true });
+				const eState: Record<string, unknown> = { mode: "source" };
+				if (startLine !== null) eState.line = startLine;
+				void leaf.openFile(this.file, { active: true, eState });
 				setTimeout(() => this.maybeInjectBackPill(leaf), 0);
 			}
 		}
