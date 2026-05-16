@@ -82,9 +82,6 @@ export class PreachView extends ItemView {
 	// Edge-swipe suppression
 	private touchHandler: ((e: TouchEvent) => void) | null = null;
 
-	// Custom long-press-to-select-word handler cleanup
-	private longPressCleanup: (() => void) | null = null;
-
 	// Exit confirm state
 	private exitConfirming = false;
 	private exitConfirmTimeout: number | null = null;
@@ -173,7 +170,6 @@ export class PreachView extends ItemView {
 
 		await this.requestWakeLock();
 		this.suppressEdgeSwipes();
-		this.installLongPressSelect();
 
 		if (this.file) {
 			await this.renderFile(this.file);
@@ -218,10 +214,6 @@ export class PreachView extends ItemView {
 		this.formatManager?.destroy();
 		this.preachBodyEl = null;
 		this.cleanupEditUI();
-		if (this.longPressCleanup) {
-			this.longPressCleanup();
-			this.longPressCleanup = null;
-		}
 
 		// Restore the view-header when leaving preach mode
 		if (this.viewHeaderEl) {
@@ -721,111 +713,6 @@ export class PreachView extends ItemView {
 	}
 
 	// Suppress edge-swipe gestures (Obsidian Mobile sidebar open)
-	// Custom long-press handler that selects just the word under the finger.
-	// Bypasses iOS WKWebView's broken word-boundary detection (which falls
-	// back to "select press point to end of container" on our DOM).
-	private installLongPressSelect(): void {
-		const target = this.scrollEl;
-		let timer: number | null = null;
-		let startX = 0;
-		let startY = 0;
-
-		const cancel = (): void => {
-			if (timer !== null) {
-				window.clearTimeout(timer);
-				timer = null;
-			}
-		};
-
-		const handleStart = (e: TouchEvent): void => {
-			if (e.touches.length !== 1) {
-				cancel();
-				return;
-			}
-			const t = e.touches[0];
-			startX = t.clientX;
-			startY = t.clientY;
-
-			// Skip if touch began on a scripture ref (it has its own tap behaviour)
-			// or on a button. Walk up looking for interactive elements.
-			const el = e.target as HTMLElement | null;
-			if (el?.closest(".preach-scripture-ref, .preach-scripture-expand, button, [role=button]")) {
-				return;
-			}
-
-			cancel();
-			timer = window.setTimeout(() => {
-				timer = null;
-				this.selectWordAt(startX, startY);
-			}, 500);
-		};
-
-		const handleMove = (e: TouchEvent): void => {
-			if (timer === null) return;
-			const t = e.touches[0];
-			if (!t) return;
-			const dx = Math.abs(t.clientX - startX);
-			const dy = Math.abs(t.clientY - startY);
-			if (dx > 10 || dy > 10) cancel();
-		};
-
-		const handleEnd = (): void => {
-			cancel();
-		};
-
-		target.addEventListener("touchstart", handleStart, { passive: true });
-		target.addEventListener("touchmove", handleMove, { passive: true });
-		target.addEventListener("touchend", handleEnd, { passive: true });
-		target.addEventListener("touchcancel", handleEnd, { passive: true });
-
-		this.longPressCleanup = (): void => {
-			target.removeEventListener("touchstart", handleStart);
-			target.removeEventListener("touchmove", handleMove);
-			target.removeEventListener("touchend", handleEnd);
-			target.removeEventListener("touchcancel", handleEnd);
-			cancel();
-		};
-	}
-
-	// Given viewport coordinates, find the word at that point and select it.
-	private selectWordAt(x: number, y: number): void {
-		// caretRangeFromPoint is WebKit-supported and gives us the caret position.
-		// Some TS lib versions don't include it on Document; cast for safety.
-		const docWithCaret = document as Document & {
-			caretRangeFromPoint?: (x: number, y: number) => Range | null;
-		};
-		const caretRange = docWithCaret.caretRangeFromPoint?.(x, y);
-		if (!caretRange) return;
-
-		const node = caretRange.startContainer;
-		if (node.nodeType !== Node.TEXT_NODE) return;
-
-		const text = node.textContent ?? "";
-		const offset = caretRange.startOffset;
-
-		// Word characters: letters, digits, apostrophes (for contractions like "God's"),
-		// and hyphens (so "self-control" reads as one word).
-		const isWordChar = (ch: string): boolean => /[\w'-]/.test(ch);
-
-		let start = offset;
-		while (start > 0 && isWordChar(text[start - 1])) start--;
-
-		let end = offset;
-		while (end < text.length && isWordChar(text[end])) end++;
-
-		if (start === end) return; // not on a word
-
-		const range = document.createRange();
-		range.setStart(node, start);
-		range.setEnd(node, end);
-
-		const sel = window.getSelection();
-		if (sel) {
-			sel.removeAllRanges();
-			sel.addRange(range);
-		}
-	}
-
 	private suppressEdgeSwipes(): void {
 		this.touchHandler = (e: TouchEvent) => {
 			if (e.touches.length === 1) {

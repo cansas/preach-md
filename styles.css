@@ -84,10 +84,8 @@
 	inset: 0;
 	overflow-y: auto;
 	overflow-x: hidden;
+	-webkit-overflow-scrolling: touch;
 	scroll-behavior: auto; /* programmatic scrolls use scrollIntoView */
-	/* Note: -webkit-overflow-scrolling: touch removed in 0.6.2.
-	   Its composited scroll layer broke iOS long-press-release word
-	   selection. Modern iOS has momentum scrolling by default. */
 }
 
 /* No accidental tap targets in the content area */
@@ -96,15 +94,12 @@
 }
 
 /* Allow text selection inside the preach body for inline formatting.
-   user-select: text on descendants so iOS finds a tight selectable
-   container. -webkit-touch-callout: none suppresses iOS's broken
-   long-press auto-selection; our custom touch handler in preach-view.ts
-   sets the word selection manually. */
+   Applied to descendants too so iOS WKWebView selects word-by-word
+   instead of from press point to end of body. */
 .preach-body,
 .preach-body * {
 	-webkit-user-select: text;
 	user-select: text;
-	-webkit-touch-callout: none;
 }
 
 /* ------------------------------------------------------------------ */
