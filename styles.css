@@ -12,7 +12,7 @@
 	--preach-font-size: 1.35rem;
 	--preach-line-height: 1.85;
 	--preach-max-width: 780px;
-	--preach-content-padding: 2rem 1.75rem 8rem;
+	--preach-content-padding: calc(var(--preach-top-bar-height) + env(safe-area-inset-top, 0px) + 1.5rem) 1.75rem 8rem;
 
 	/* Colours */
 	--preach-bg: #0e0e0e;
@@ -35,12 +35,13 @@
 	--preach-scripture-expand-text: #d8eaf5;
 	--preach-scripture-verse-num-color: #7aacce;
 
-	/* Corners */
-	--preach-corner-size: 48px;
-	--preach-corner-bg: rgba(255, 255, 255, 0.08);
-	--preach-corner-hover-bg: rgba(255, 255, 255, 0.15);
-	--preach-corner-color: #ccc;
-	--preach-corner-radius: 10px;
+	/* Top bar */
+	--preach-top-bar-height: 60px;
+	--preach-top-btn-size: 44px;
+	--preach-top-btn-bg: rgba(255, 255, 255, 0.08);
+	--preach-top-btn-hover-bg: rgba(255, 255, 255, 0.15);
+	--preach-top-btn-color: #ccc;
+	--preach-top-btn-radius: 10px;
 
 	/* Timer */
 	--preach-timer-bg: rgba(255, 255, 255, 0.07);
@@ -195,16 +196,101 @@
 }
 
 /* ------------------------------------------------------------------ */
+/* Top bar                                                              */
+/* ------------------------------------------------------------------ */
+
+.preach-top-bar {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 20;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: env(safe-area-inset-top, 0px);
+	padding-left: 8px;
+	padding-right: 8px;
+	padding-bottom: 6px;
+	background: color-mix(in srgb, var(--background-primary, #0e0e0e) 70%, transparent);
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
+	pointer-events: none; /* let taps fall through to scroll area by default */
+}
+
+.preach-top-bar-group {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	pointer-events: all;
+}
+
+.preach-top-bar-group--left {
+	flex: 1;
+	justify-content: flex-start;
+}
+
+.preach-top-bar-group--centre {
+	flex: 0 0 auto;
+	pointer-events: all;
+}
+
+.preach-top-bar-group--right {
+	flex: 1;
+	justify-content: flex-end;
+}
+
+/* Fadeable controls: fade out when idle, reveal on interaction */
+.preach-top-btn--fadeable {
+	opacity: 1;
+	transition: opacity 150ms ease-in;
+}
+
+.preach-top-bar--idle .preach-top-btn--fadeable {
+	opacity: 0;
+	transition: opacity 300ms ease-out;
+	pointer-events: none;
+}
+
+/* Individual top-bar buttons */
+.preach-top-btn {
+	width: var(--preach-top-btn-size);
+	height: var(--preach-top-btn-size);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--preach-top-btn-bg);
+	color: var(--preach-top-btn-color);
+	border: none;
+	border-radius: var(--preach-top-btn-radius);
+	cursor: pointer;
+	pointer-events: all;
+	-webkit-tap-highlight-color: transparent;
+	touch-action: manipulation;
+	transition: background 0.15s;
+	flex-shrink: 0;
+}
+
+.preach-top-btn:active,
+.preach-top-btn:hover {
+	background: var(--preach-top-btn-hover-bg);
+}
+
+/* Exit wrap: column so chip sits above button */
+.preach-exit-wrap {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 2px;
+}
+
+/* ------------------------------------------------------------------ */
 /* Timer                                                                */
 /* ------------------------------------------------------------------ */
 
 .preach-timer-wrap {
-	position: absolute;
-	top: 12px;
-	left: 50%;
-	transform: translateX(-50%);
-	z-index: 20;
-	pointer-events: none; /* wrap doesn't intercept, only the pill does */
+	/* timer is now flow-positioned inside the top bar */
+	pointer-events: none;
 }
 
 .preach-timer {
@@ -265,75 +351,7 @@
 	user-select: none;
 }
 
-/* ------------------------------------------------------------------ */
-/* Corner controls                                                      */
-/* ------------------------------------------------------------------ */
-
-.preach-corners {
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
-	z-index: 20;
-}
-
-.preach-corner {
-	position: absolute;
-	width: var(--preach-corner-size);
-	height: var(--preach-corner-size);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background: var(--preach-corner-bg);
-	color: var(--preach-corner-color);
-	border: none;
-	border-radius: var(--preach-corner-radius);
-	cursor: pointer;
-	pointer-events: all;
-	margin: 10px;
-	-webkit-tap-highlight-color: transparent;
-	touch-action: manipulation;
-	transition: background 0.15s;
-}
-
-.preach-corner:active,
-.preach-corner:hover {
-	background: var(--preach-corner-hover-bg);
-}
-
-.preach-corner--top-left {
-	top: 0;
-	left: 0;
-}
-
-.preach-corner-wrap {
-	position: absolute;
-	pointer-events: none;
-}
-
-.preach-corner-wrap--top-right {
-	top: 0;
-	right: 0;
-	display: flex;
-	flex-direction: column;
-	align-items: flex-end;
-	margin: 10px;
-}
-
-.preach-corner-wrap--top-right .preach-corner {
-	position: static;
-	margin: 0;
-	pointer-events: all;
-}
-
-.preach-corner--bottom-right {
-	bottom: 0;
-	right: 0;
-}
-
-.preach-corner--bottom-left {
-	bottom: 0;
-	left: 0;
-}
+/* Corner classes retained for backwards compatibility - no longer used by top-bar elements */
 
 /* ------------------------------------------------------------------ */
 /* Highlight rendering (==...== native Obsidian marks, no button)      */
@@ -433,10 +451,10 @@
 	font-weight: 600;
 	padding: 3px 10px;
 	border-radius: 12px;
-	margin-bottom: 4px;
 	opacity: 0;
 	pointer-events: none;
 	transition: opacity 0.15s;
+	white-space: nowrap;
 }
 
 .preach-exit-chip--visible {
@@ -455,7 +473,7 @@
 	display: flex;
 	align-items: flex-start;
 	justify-content: flex-start;
-	padding: 70px 0 0 10px;
+	padding: calc(var(--preach-top-bar-height) + env(safe-area-inset-top, 0px) + 10px) 0 0 10px;
 	-webkit-backdrop-filter: blur(4px);
 	backdrop-filter: blur(4px);
 	transition: opacity 0.15s;

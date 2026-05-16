@@ -63,8 +63,13 @@ export class PreachView extends ItemView {
 	private outlineBtn!: HTMLElement;
 	private exitBtn!: HTMLElement;
 	private editBtn!: HTMLElement;
+	private formatBtn!: HTMLElement;
+	private topBar!: HTMLElement;
 	private overlayEl!: HTMLElement;
 	private exitChip!: HTMLElement;
+
+	// Idle-fade timeout handle
+	private idleTimeout: number | null = null;
 
 	// Timer
 	private timer!: PreachTimer;
@@ -184,6 +189,10 @@ export class PreachView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		if (this.idleTimeout !== null) {
+			window.clearTimeout(this.idleTimeout);
+			this.idleTimeout = null;
+		}
 		this.cleanupEditPills();
 
 		// Restore the view-header when leaving preach mode
@@ -224,26 +233,21 @@ export class PreachView extends ItemView {
 		root.empty();
 		root.addClass("preach-md-root");
 
-		// Scrollable content area
+		// Scrollable content area - built first so it sits behind the top bar
 		this.scrollEl = root.createEl("div", { cls: "preach-content" });
 		this.scrollEl.addEventListener("scroll", () => {
 			this.savedScrollTop = this.scrollEl.scrollTop;
+			this.resetIdleTimer();
 		});
 
-		// Timer pill (top-centre)
-		this.timerEl = root.createEl("div", { cls: "preach-timer-wrap" });
-		this.timer = new PreachTimer(this.timerEl, {
-			targetMinutes: this.plugin.settings.targetMinutes,
-			warnMinutes: this.plugin.settings.warnMinutes,
-			critMinutes: this.plugin.settings.critMinutes,
-		});
+		// Single top bar spanning full width
+		this.topBar = root.createEl("div", { cls: "preach-top-bar" });
 
-		// Corner controls container
-		const corners = root.createEl("div", { cls: "preach-corners" });
+		// Left group: outline
+		const leftGroup = this.topBar.createEl("div", { cls: "preach-top-bar-group preach-top-bar-group--left" });
 
-		// Top-left: outline
-		this.outlineBtn = corners.createEl("button", {
-			cls: "preach-corner preach-corner--top-left",
+		this.outlineBtn = leftGroup.createEl("button", {
+			cls: "preach-top-btn preach-top-btn--fadeable",
 			attr: { "aria-label": "Outline", title: "Outline" },
 		});
 		const outlineSvg = this.outlineBtn.createSvg("svg", {
@@ -254,44 +258,81 @@ export class PreachView extends ItemView {
 		outlineSvg.createSvg("line", { attr: { x1: "3", y1: "18", x2: "18", y2: "18" } });
 		this.outlineBtn.addEventListener("pointerdown", (e: PointerEvent) => {
 			e.stopPropagation();
+			this.resetIdleTimer();
 			this.toggleOutline();
 		});
 
-		// Top-right: exit (with confirm chip above the button)
-		const exitWrap = corners.createEl("div", {
-			cls: "preach-corner-wrap preach-corner-wrap--top-right",
-		});
-		this.exitChip = exitWrap.createEl("span", {
-			cls: "preach-exit-chip",
-			text: "Exit?",
-		});
-		this.exitBtn = exitWrap.createEl("button", {
-			cls: "preach-corner preach-corner--top-right",
-			attr: { "aria-label": "Exit preach mode", title: "Exit" },
-		});
-		const exitSvg = this.exitBtn.createSvg("svg", {
-			attr: { xmlns: "http://www.w3.org/2000/svg", width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" },
-		});
-		exitSvg.createSvg("line", { attr: { x1: "18", y1: "6", x2: "6", y2: "18" } });
-		exitSvg.createSvg("line", { attr: { x1: "6", y1: "6", x2: "18", y2: "18" } });
-		this.exitBtn.addEventListener("pointerdown", (e: PointerEvent) => {
-			e.stopPropagation();
-			this.handleExit();
+		// Centre group: timer (always visible - not fadeable)
+		const centreGroup = this.topBar.createEl("div", { cls: "preach-top-bar-group preach-top-bar-group--centre" });
+		this.timerEl = centreGroup.createEl("div", { cls: "preach-timer-wrap" });
+		this.timer = new PreachTimer(this.timerEl, {
+			targetMinutes: this.plugin.settings.targetMinutes,
+			warnMinutes: this.plugin.settings.warnMinutes,
+			critMinutes: this.plugin.settings.critMinutes,
 		});
 
-		// Bottom-right: edit
-		this.editBtn = corners.createEl("button", {
-			cls: "preach-corner preach-corner--bottom-right",
+		// Right group: format (placeholder), edit, exit
+		const rightGroup = this.topBar.createEl("div", { cls: "preach-top-bar-group preach-top-bar-group--right" });
+
+		// Format button (placeholder - wired in Phase 3)
+		this.formatBtn = rightGroup.createEl("button", {
+			cls: "preach-top-btn preach-top-btn--fadeable preach-format-btn",
+			attr: { "aria-label": "Format text", title: "Format" },
+		});
+		const formatSvg = this.formatBtn.createSvg("svg", {
+			attr: { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" },
+		});
+		// "type" icon: T with serifs
+		formatSvg.createSvg("polyline", { attr: { points: "4 7 4 4 20 4 20 7" } });
+		formatSvg.createSvg("line", { attr: { x1: "9", y1: "20", x2: "15", y2: "20" } });
+		formatSvg.createSvg("line", { attr: { x1: "12", y1: "4", x2: "12", y2: "20" } });
+		this.formatBtn.addEventListener("pointerdown", (e: PointerEvent) => {
+			e.stopPropagation();
+			this.resetIdleTimer();
+			// Wired in Phase 3
+			console.log("format button tapped - not yet wired");
+		});
+
+		// Edit button
+		this.editBtn = rightGroup.createEl("button", {
+			cls: "preach-top-btn preach-top-btn--fadeable",
 			attr: { "aria-label": "Edit note", title: "Edit" },
 		});
 		const editSvg = this.editBtn.createSvg("svg", {
-			attr: { xmlns: "http://www.w3.org/2000/svg", width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" },
+			attr: { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" },
 		});
 		editSvg.createSvg("path", { attr: { d: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" } });
 		editSvg.createSvg("path", { attr: { d: "M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" } });
 		this.editBtn.addEventListener("pointerdown", (e: PointerEvent) => {
 			e.stopPropagation();
+			this.resetIdleTimer();
 			this.goToEdit();
+		});
+
+		// Exit button with confirm chip
+		const exitWrap = rightGroup.createEl("div", { cls: "preach-exit-wrap preach-top-btn--fadeable" });
+		this.exitChip = exitWrap.createEl("span", {
+			cls: "preach-exit-chip",
+			text: "Exit?",
+		});
+		this.exitBtn = exitWrap.createEl("button", {
+			cls: "preach-top-btn",
+			attr: { "aria-label": "Exit preach mode", title: "Exit" },
+		});
+		const exitSvg = this.exitBtn.createSvg("svg", {
+			attr: { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" },
+		});
+		exitSvg.createSvg("line", { attr: { x1: "18", y1: "6", x2: "6", y2: "18" } });
+		exitSvg.createSvg("line", { attr: { x1: "6", y1: "6", x2: "18", y2: "18" } });
+		this.exitBtn.addEventListener("pointerdown", (e: PointerEvent) => {
+			e.stopPropagation();
+			this.resetIdleTimer();
+			this.handleExit();
+		});
+
+		// Idle-fade: reset on any tap on the scroll area
+		this.scrollEl.addEventListener("pointerdown", () => {
+			this.resetIdleTimer();
 		});
 
 		// Wire the highlight manager to its content area (button removed)
@@ -306,6 +347,23 @@ export class PreachView extends ItemView {
 				this.closeOutline();
 			}
 		});
+
+		// Start idle timer immediately
+		this.resetIdleTimer();
+	}
+
+	// Idle-fade: show controls, then fade after 3 seconds of no interaction.
+	private resetIdleTimer(): void {
+		// Reveal all fadeable controls
+		this.topBar?.classList.remove("preach-top-bar--idle");
+
+		if (this.idleTimeout !== null) {
+			window.clearTimeout(this.idleTimeout);
+		}
+		this.idleTimeout = window.setTimeout(() => {
+			this.topBar?.classList.add("preach-top-bar--idle");
+			this.idleTimeout = null;
+		}, 3000);
 	}
 
 	// Render the file into the scroll area using block-by-block rendering
