@@ -161,12 +161,17 @@ export class PreachView extends ItemView {
 
 		this.buildUI();
 
-		// Build the floating inline format toolbar (positioned as a sibling of the scroll area)
-		this.preachFormatToolbar = new PreachFormatToolbar(
-			this.formatManager,
-			() => this.preachBodyEl,
-			this.containerEl
-		);
+		// Inline format toolbar disabled in v0.6.5 as a diagnostic test:
+		// its document-level selectionchange listener is the prime suspect
+		// for breaking iOS long-press-release word selection. Editor-side
+		// format toolbar still works as a fallback. Restore by uncommenting
+		// once the root cause is confirmed or a non-invasive listener
+		// pattern is found.
+		// this.preachFormatToolbar = new PreachFormatToolbar(
+		// 	this.formatManager,
+		// 	() => this.preachBodyEl,
+		// 	this.containerEl
+		// );
 
 		await this.requestWakeLock();
 		this.suppressEdgeSwipes();
