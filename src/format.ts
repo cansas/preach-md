@@ -355,7 +355,17 @@ export class PreachFormatToolbar {
 	private containerEl: HTMLElement;
 	private toolbarEl: HTMLElement;
 	private selectionChangeHandler: () => void;
+	private touchStartHandler: () => void;
+	private touchEndHandler: () => void;
 	private visible = false;
+
+	// Touch-gating state. iOS's selection finalisation must complete
+	// before we mutate the DOM, or the word-boundary detection breaks
+	// and the selection falls back to "press point to end of container".
+	// We hold the toolbar during active touch and for 200ms after release.
+	private touchActive = false;
+	private settleTimer: number | null = null;
+	private readonly SETTLE_MS = 200;
 
 	constructor(
 		formatManager: FormatManager,
@@ -369,7 +379,38 @@ export class PreachFormatToolbar {
 		this.toolbarEl = this.buildToolbar();
 		this.containerEl.appendChild(this.toolbarEl);
 
-		this.selectionChangeHandler = () => this.onSelectionChange();
+		this.touchStartHandler = (): void => {
+			this.touchActive = true;
+			// Hide immediately. No layout reads, no DOM mutations beyond
+			// removing a class - safe during active gesture.
+			this.hide();
+			if (this.settleTimer !== null) {
+				window.clearTimeout(this.settleTimer);
+				this.settleTimer = null;
+			}
+		};
+
+		this.touchEndHandler = (): void => {
+			if (this.settleTimer !== null) {
+				window.clearTimeout(this.settleTimer);
+			}
+			this.settleTimer = window.setTimeout(() => {
+				this.touchActive = false;
+				this.settleTimer = null;
+				this.onSelectionChange();
+			}, this.SETTLE_MS);
+		};
+
+		this.selectionChangeHandler = (): void => this.onSelectionChange();
+
+		// Touchstart on the scroll container so taps on the toolbar itself
+		// don't gate it. Touchend on document so we catch the release even
+		// if the finger drifts off-screen.
+		const body = this.bodyElGetter();
+		const touchTarget = body?.closest(".preach-content") ?? document;
+		touchTarget.addEventListener("touchstart", this.touchStartHandler, { passive: true } as AddEventListenerOptions);
+		document.addEventListener("touchend", this.touchEndHandler, { passive: true });
+		document.addEventListener("touchcancel", this.touchEndHandler, { passive: true });
 		document.addEventListener("selectionchange", this.selectionChangeHandler);
 	}
 
@@ -433,6 +474,12 @@ export class PreachFormatToolbar {
 	}
 
 	private onSelectionChange(): void {
+		// Gate: while a touch is active, or while we're inside the
+		// post-touch settle window, do nothing. iOS needs uninterrupted
+		// DOM stability through its selection finalisation, or it
+		// falls back to "select to end of container".
+		if (this.touchActive || this.settleTimer !== null) return;
+
 		const sel = window.getSelection();
 		if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
 			this.hide();
@@ -495,6 +542,17 @@ export class PreachFormatToolbar {
 
 	destroy(): void {
 		document.removeEventListener("selectionchange", this.selectionChangeHandler);
+		document.removeEventListener("touchend", this.touchEndHandler);
+		document.removeEventListener("touchcancel", this.touchEndHandler);
+		// Touchstart was added to the scroll container (or document if not found).
+		// Try both removals - removeEventListener is a no-op if the listener wasn't there.
+		const body = this.bodyElGetter();
+		const touchTarget = body?.closest(".preach-content") ?? document;
+		touchTarget.removeEventListener("touchstart", this.touchStartHandler);
+		if (this.settleTimer !== null) {
+			window.clearTimeout(this.settleTimer);
+			this.settleTimer = null;
+		}
 		this.toolbarEl.remove();
 	}
 }

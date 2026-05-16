@@ -967,6 +967,10 @@ var ScriptureExpander = class {
 };
 
 // src/format.ts
+var FORMAT_BOLD = { open: "**", close: "**" };
+var FORMAT_ITALIC = { open: "*", close: "*" };
+var FORMAT_UNDERLINE = { open: "<u>", close: "</u>" };
+var FORMAT_HIGHLIGHT = { open: "==", close: "==" };
 var FormatManager = class {
   constructor(app, file) {
     this.blocks = [];
@@ -1236,6 +1240,158 @@ var FormatManager = class {
     this.noticeEl = null;
   }
 };
+var PreachFormatToolbar = class {
+  constructor(formatManager, bodyElGetter, containerEl) {
+    this.visible = false;
+    // Touch-gating state. iOS's selection finalisation must complete
+    // before we mutate the DOM, or the word-boundary detection breaks
+    // and the selection falls back to "press point to end of container".
+    // We hold the toolbar during active touch and for 200ms after release.
+    this.touchActive = false;
+    this.settleTimer = null;
+    this.SETTLE_MS = 200;
+    var _a;
+    this.formatManager = formatManager;
+    this.bodyElGetter = bodyElGetter;
+    this.containerEl = containerEl;
+    this.toolbarEl = this.buildToolbar();
+    this.containerEl.appendChild(this.toolbarEl);
+    this.touchStartHandler = () => {
+      this.touchActive = true;
+      this.hide();
+      if (this.settleTimer !== null) {
+        window.clearTimeout(this.settleTimer);
+        this.settleTimer = null;
+      }
+    };
+    this.touchEndHandler = () => {
+      if (this.settleTimer !== null) {
+        window.clearTimeout(this.settleTimer);
+      }
+      this.settleTimer = window.setTimeout(() => {
+        this.touchActive = false;
+        this.settleTimer = null;
+        this.onSelectionChange();
+      }, this.SETTLE_MS);
+    };
+    this.selectionChangeHandler = () => this.onSelectionChange();
+    const body = this.bodyElGetter();
+    const touchTarget = (_a = body == null ? void 0 : body.closest(".preach-content")) != null ? _a : document;
+    touchTarget.addEventListener("touchstart", this.touchStartHandler, { passive: true });
+    document.addEventListener("touchend", this.touchEndHandler, { passive: true });
+    document.addEventListener("touchcancel", this.touchEndHandler, { passive: true });
+    document.addEventListener("selectionchange", this.selectionChangeHandler);
+  }
+  buildToolbar() {
+    const bar = document.createElement("div");
+    bar.className = "preach-inline-format-bar";
+    bar.setAttribute("aria-label", "Format selection");
+    const makeBtn = (label, title, wrapper, extraClass) => {
+      const btn = document.createElement("button");
+      btn.className = "preach-inline-fmt-btn" + (extraClass ? " " + extraClass : "");
+      btn.setAttribute("aria-label", title);
+      btn.setAttribute("title", title);
+      btn.style.userSelect = "none";
+      btn.style.webkitUserSelect = "none";
+      if (label === "H") {
+        btn.innerHTML = '<span style="display:inline-block;width:13px;height:13px;background:#ffd24a;border-radius:2px;vertical-align:middle;"></span>';
+      } else {
+        btn.textContent = label;
+      }
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentBody = this.bodyElGetter();
+        if (!currentBody) {
+          this.hide();
+          return;
+        }
+        const result = this.formatManager.captureFromSelection(currentBody);
+        if (!result) {
+          this.hide();
+          return;
+        }
+        void this.formatManager.applyFormat(wrapper).then(() => {
+          var _a;
+          this.hide();
+          (_a = window.getSelection()) == null ? void 0 : _a.removeAllRanges();
+        });
+      });
+      bar.appendChild(btn);
+    };
+    makeBtn("B", "Bold", FORMAT_BOLD, "preach-inline-fmt-btn--bold");
+    makeBtn("I", "Italic", FORMAT_ITALIC, "preach-inline-fmt-btn--italic");
+    makeBtn("U", "Underline", FORMAT_UNDERLINE, "preach-inline-fmt-btn--underline");
+    makeBtn("H", "Highlight", FORMAT_HIGHLIGHT, "preach-inline-fmt-btn--highlight");
+    return bar;
+  }
+  onSelectionChange() {
+    if (this.touchActive || this.settleTimer !== null)
+      return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+      this.hide();
+      return;
+    }
+    const selectedText = sel.toString().trim();
+    if (!selectedText) {
+      this.hide();
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const currentBody = this.bodyElGetter();
+    if (!currentBody || !currentBody.contains(range.commonAncestorContainer)) {
+      this.hide();
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    this.position(rect);
+    this.show();
+  }
+  position(rect) {
+    const TOOLBAR_H = 52;
+    const MARGIN = 8;
+    const vpW = window.innerWidth;
+    const toolbarW = this.toolbarEl.offsetWidth || 200;
+    const midX = rect.left + rect.width / 2;
+    let left = midX - toolbarW / 2;
+    left = Math.max(8, Math.min(vpW - toolbarW - 8, left));
+    let top;
+    if (rect.top > TOOLBAR_H + MARGIN) {
+      top = rect.top - TOOLBAR_H - MARGIN;
+    } else {
+      top = rect.bottom + MARGIN;
+    }
+    this.toolbarEl.style.left = `${left}px`;
+    this.toolbarEl.style.top = `${top}px`;
+  }
+  show() {
+    if (!this.visible) {
+      this.toolbarEl.classList.add("preach-inline-format-bar--visible");
+      this.visible = true;
+    }
+  }
+  hide() {
+    if (this.visible) {
+      this.toolbarEl.classList.remove("preach-inline-format-bar--visible");
+      this.visible = false;
+    }
+  }
+  destroy() {
+    var _a;
+    document.removeEventListener("selectionchange", this.selectionChangeHandler);
+    document.removeEventListener("touchend", this.touchEndHandler);
+    document.removeEventListener("touchcancel", this.touchEndHandler);
+    const body = this.bodyElGetter();
+    const touchTarget = (_a = body == null ? void 0 : body.closest(".preach-content")) != null ? _a : document;
+    touchTarget.removeEventListener("touchstart", this.touchStartHandler);
+    if (this.settleTimer !== null) {
+      window.clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+    }
+    this.toolbarEl.remove();
+  }
+};
 
 // src/preach-view.ts
 var PREACH_VIEW_TYPE = "preach-md-view";
@@ -1321,6 +1477,11 @@ var PreachView = class extends import_obsidian2.ItemView {
     );
     this.formatManager = new FormatManager(this.app, this.file);
     this.buildUI();
+    this.preachFormatToolbar = new PreachFormatToolbar(
+      this.formatManager,
+      () => this.preachBodyEl,
+      this.containerEl
+    );
     await this.requestWakeLock();
     this.suppressEdgeSwipes();
     if (this.file) {
