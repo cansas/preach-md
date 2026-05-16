@@ -97,15 +97,15 @@
    Applied to descendants too so iOS WKWebView selects word-by-word
    instead of from press point to end of body.
 
-   -webkit-touch-callout: none suppresses iOS's native selection bar
-   (Copy / Look Up / Translate). Editor view keeps it because it's
-   useful there for copy/paste; preach view doesn't need it since
-   our format toolbar covers the only action that matters here. */
+   Note: tried -webkit-touch-callout: none in v0.6.8 to suppress iOS's
+   selection menu - no effect. That property only controls the
+   long-press callout for links and images, not the text-selection
+   edit menu. Suppressing the latter would require a custom
+   selection model (capture pointer events, draw our own highlight). */
 .preach-body,
 .preach-body * {
 	-webkit-user-select: text;
 	user-select: text;
-	-webkit-touch-callout: none;
 }
 
 /* ------------------------------------------------------------------ */
