@@ -10,6 +10,7 @@ import type PreachMDPlugin from "./main";
 import { PreachTimer } from "./timer";
 import { HighlightManager, parseBlocks } from "./highlight";
 import { ScriptureExpander } from "./scripture";
+import { FormatManager, PreachFormatToolbar } from "./format";
 
 export const PREACH_VIEW_TYPE = "preach-md-view";
 
@@ -91,6 +92,11 @@ export class PreachView extends ItemView {
 	// Feature managers
 	private highlightManager!: HighlightManager;
 	private scriptureExpander!: ScriptureExpander;
+	private formatManager!: FormatManager;
+	private preachFormatToolbar: PreachFormatToolbar | null = null;
+
+	// Current preach body element (replaced on each renderFile; toolbar queries via getter)
+	private preachBodyEl: HTMLElement | null = null;
 
 	// Parsed blocks (kept in sync after each renderFile call)
 	private blocks: ReturnType<typeof parseBlocks> = [];
@@ -151,8 +157,17 @@ export class PreachView extends ItemView {
 			this.renderComponent,
 			""
 		);
+		this.formatManager = new FormatManager(this.app, this.file);
 
 		this.buildUI();
+
+		// Build the floating inline format toolbar (positioned as a sibling of the scroll area)
+		this.preachFormatToolbar = new PreachFormatToolbar(
+			this.formatManager,
+			() => this.preachBodyEl,
+			this.containerEl
+		);
+
 		await this.requestWakeLock();
 		this.suppressEdgeSwipes();
 
@@ -194,6 +209,10 @@ export class PreachView extends ItemView {
 			window.clearTimeout(this.idleTimeout);
 			this.idleTimeout = null;
 		}
+		this.preachFormatToolbar?.destroy();
+		this.preachFormatToolbar = null;
+		this.formatManager?.destroy();
+		this.preachBodyEl = null;
 		this.cleanupEditUI();
 
 		// Restore the view-header when leaving preach mode
@@ -222,6 +241,9 @@ export class PreachView extends ItemView {
 		this.file = file;
 		if (this.highlightManager) {
 			this.highlightManager.updateFile(file);
+		}
+		if (this.formatManager) {
+			this.formatManager.updateFile(file);
 		}
 		if (this.scrollEl) {
 			await this.renderFile(file);
@@ -361,6 +383,10 @@ export class PreachView extends ItemView {
 		this.highlightManager.attachBlocks(blocks);
 
 		const body = this.scrollEl.createEl("div", { cls: "preach-body" });
+		this.preachBodyEl = body;
+		if (this.formatManager) {
+			this.formatManager.updateBlocks(blocks);
+		}
 
 		for (let i = 0; i < blocks.length; i++) {
 			const block = blocks[i];

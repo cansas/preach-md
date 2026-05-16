@@ -966,6 +966,390 @@ var ScriptureExpander = class {
   }
 };
 
+// src/format.ts
+var FORMAT_BOLD = { open: "**", close: "**" };
+var FORMAT_ITALIC = { open: "*", close: "*" };
+var FORMAT_UNDERLINE = { open: "<u>", close: "</u>" };
+var FORMAT_HIGHLIGHT = { open: "==", close: "==" };
+var FormatManager = class {
+  constructor(app, file) {
+    this.blocks = [];
+    // The selection captured on pointerdown (before focus changes clear it)
+    this.capturedSelection = null;
+    // Reused notice element
+    this.noticeEl = null;
+    this.noticeTimeout = null;
+    this.app = app;
+    this.file = file;
+  }
+  updateFile(file) {
+    this.file = file;
+  }
+  updateBlocks(blocks) {
+    this.blocks = blocks;
+  }
+  /**
+   * Inspect the current window selection, validate it is inside the preach body,
+   * not cross-block, not inside a scripture expand, and capture it.
+   *
+   * Returns a CaptureResult on success (with selection bounding rect),
+   * or null if the selection is empty, collapsed, or out of bounds.
+   * On a bail condition (cross-block, scripture, etc.) calls showFormatFailNotice
+   * and returns null.
+   */
+  captureFromSelection(bodyEl) {
+    var _a;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0)
+      return null;
+    const selectedText = sel.toString().trim();
+    if (!selectedText)
+      return null;
+    const range = sel.getRangeAt(0);
+    if (!bodyEl.contains(range.commonAncestorContainer))
+      return null;
+    let node = sel.anchorNode;
+    while (node) {
+      if (node instanceof HTMLElement) {
+        if (node.classList.contains("preach-scripture-expand")) {
+          this.showFormatFailNotice("scripture-expand");
+          return null;
+        }
+      }
+      node = node.parentNode;
+    }
+    let blockEl = null;
+    node = sel.anchorNode;
+    while (node) {
+      if (node instanceof HTMLElement && node.classList.contains("preach-block")) {
+        blockEl = node;
+        break;
+      }
+      node = node.parentNode;
+    }
+    if (!blockEl)
+      return null;
+    let focusBlockEl = null;
+    let fn = sel.focusNode;
+    while (fn) {
+      if (fn instanceof HTMLElement && fn.classList.contains("preach-block")) {
+        focusBlockEl = fn;
+        break;
+      }
+      fn = fn.parentNode;
+    }
+    if (focusBlockEl !== blockEl) {
+      this.showFormatFailNotice("cross-block");
+      return null;
+    }
+    const blockIndex = parseInt((_a = blockEl.dataset.blockIndex) != null ? _a : "", 10);
+    if (isNaN(blockIndex))
+      return null;
+    const block = this.blocks[blockIndex];
+    if (!block)
+      return null;
+    const sourceContent = block.content;
+    let sourceIdx = sourceContent.indexOf(selectedText);
+    if (sourceIdx === -1) {
+      const stripped = sourceContent.replace(/[*_~=<>/]/g, "");
+      const strippedIdx = stripped.indexOf(selectedText);
+      if (strippedIdx !== -1) {
+        let srcPos = 0;
+        let strippedCount = 0;
+        while (srcPos < sourceContent.length && strippedCount < strippedIdx) {
+          if (!/[*_~=<>/]/.test(sourceContent[srcPos]))
+            strippedCount++;
+          srcPos++;
+        }
+        sourceIdx = srcPos;
+      }
+    }
+    if (sourceIdx === -1) {
+      this.showFormatFailNotice("not-found");
+      return null;
+    }
+    const before = sourceContent.slice(0, sourceIdx);
+    const after = sourceContent.slice(sourceIdx + selectedText.length);
+    const wrappers = ["**", "*", "==", "<u>"];
+    for (const w of wrappers) {
+      if (before.endsWith(w) && after.startsWith(w === "**" ? "**" : w === "*" ? "*" : w === "==" ? "==" : "</u>")) {
+        this.showFormatFailNotice("collision");
+        return null;
+      }
+    }
+    this.capturedSelection = { text: selectedText, blockIndex };
+    const rect = range.getBoundingClientRect();
+    return { rect };
+  }
+  /**
+   * Called from a pointerdown handler on a format button in the editor.
+   * Must read window.getSelection() immediately before focus changes lose it.
+   */
+  captureCurrentSelection(scrollEl) {
+    var _a;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0)
+      return false;
+    const selectedText = sel.toString().trim();
+    if (!selectedText)
+      return false;
+    let node = sel.anchorNode;
+    let blockEl = null;
+    while (node) {
+      if (node instanceof HTMLElement) {
+        if (node.classList.contains("preach-scripture-expand"))
+          return false;
+        if (node.classList.contains("preach-block")) {
+          blockEl = node;
+          break;
+        }
+      }
+      node = node.parentNode;
+    }
+    if (!blockEl)
+      return false;
+    const focusNode = sel.focusNode;
+    let focusBlockEl = null;
+    let fn = focusNode;
+    while (fn) {
+      if (fn instanceof HTMLElement && fn.classList.contains("preach-block")) {
+        focusBlockEl = fn;
+        break;
+      }
+      fn = fn.parentNode;
+    }
+    if (focusBlockEl !== blockEl) {
+      console.warn("preach-md format: selection spans multiple blocks, ignoring");
+      return false;
+    }
+    const blockIndex = parseInt((_a = blockEl.dataset.blockIndex) != null ? _a : "", 10);
+    if (isNaN(blockIndex))
+      return false;
+    this.capturedSelection = { text: selectedText, blockIndex };
+    return true;
+  }
+  /**
+   * Apply a format wrapper around the previously captured selection.
+   * Writes to the source file via vault.process().
+   */
+  async applyFormat(wrapper) {
+    if (!this.capturedSelection || !this.file)
+      return;
+    const { text: selectedText, blockIndex } = this.capturedSelection;
+    const block = this.blocks[blockIndex];
+    if (!block)
+      return;
+    const sourceContent = block.content;
+    let sourceIdx = sourceContent.indexOf(selectedText);
+    if (sourceIdx === -1) {
+      const stripped = sourceContent.replace(/[*_~=]/g, "");
+      const strippedIdx = stripped.indexOf(selectedText);
+      if (strippedIdx !== -1) {
+        let srcPos = 0;
+        let strippedCount = 0;
+        while (srcPos < sourceContent.length && strippedCount < strippedIdx) {
+          if (!/[*_~=]/.test(sourceContent[srcPos]))
+            strippedCount++;
+          srcPos++;
+        }
+        sourceIdx = srcPos;
+      }
+    }
+    if (sourceIdx === -1) {
+      console.warn("preach-md format: could not locate selected text in source block, ignoring");
+      return;
+    }
+    const absoluteStart = block.startOffset + sourceIdx;
+    const absoluteEnd = absoluteStart + selectedText.length;
+    await this.app.vault.process(this.file, (data) => {
+      return data.slice(0, absoluteStart) + wrapper.open + data.slice(absoluteStart, absoluteEnd) + wrapper.close + data.slice(absoluteEnd);
+    });
+    this.capturedSelection = null;
+  }
+  /** Show a brief notice near the selection area that formatting failed. */
+  showFormatFailNotice(reason) {
+    console.log("preach-md format-fail:", reason);
+    if (!this.noticeEl) {
+      this.noticeEl = document.createElement("div");
+      this.noticeEl.className = "preach-format-fail-notice";
+      this.noticeEl.textContent = "Can't format here. Use the edit button for changes.";
+      this.noticeEl.addEventListener("pointerdown", () => this.hideFormatFailNotice());
+    }
+    if (!this.noticeEl.isConnected) {
+      document.body.appendChild(this.noticeEl);
+    }
+    this.noticeEl.classList.add("preach-format-fail-notice--visible");
+    if (this.noticeTimeout !== null)
+      window.clearTimeout(this.noticeTimeout);
+    this.noticeTimeout = window.setTimeout(() => this.hideFormatFailNotice(), 3e3);
+  }
+  /** Position and show notice near a specific rect. */
+  showFormatFailNoticeAt(rect) {
+    console.log("preach-md format-fail near selection");
+    if (!this.noticeEl) {
+      this.noticeEl = document.createElement("div");
+      this.noticeEl.className = "preach-format-fail-notice";
+      this.noticeEl.textContent = "Can't format here. Use the edit button for changes.";
+      this.noticeEl.addEventListener("pointerdown", () => this.hideFormatFailNotice());
+    }
+    if (!this.noticeEl.isConnected)
+      document.body.appendChild(this.noticeEl);
+    this.positionNotice(rect);
+    this.noticeEl.classList.add("preach-format-fail-notice--visible");
+    if (this.noticeTimeout !== null)
+      window.clearTimeout(this.noticeTimeout);
+    this.noticeTimeout = window.setTimeout(() => this.hideFormatFailNotice(), 3e3);
+  }
+  hideFormatFailNotice() {
+    var _a;
+    if (this.noticeTimeout !== null) {
+      window.clearTimeout(this.noticeTimeout);
+      this.noticeTimeout = null;
+    }
+    (_a = this.noticeEl) == null ? void 0 : _a.classList.remove("preach-format-fail-notice--visible");
+  }
+  positionNotice(rect) {
+    if (!this.noticeEl)
+      return;
+    const TOOLBAR_H = 36;
+    const MARGIN = 8;
+    const vpW = window.innerWidth;
+    this.noticeEl.style.visibility = "hidden";
+    this.noticeEl.style.top = "-9999px";
+    this.noticeEl.style.left = "-9999px";
+    const noticeW = this.noticeEl.offsetWidth || 260;
+    const midX = rect.left + rect.width / 2;
+    let left = midX - noticeW / 2;
+    left = Math.max(8, Math.min(vpW - noticeW - 8, left));
+    let top;
+    if (rect.top > TOOLBAR_H + MARGIN) {
+      top = rect.top - TOOLBAR_H - MARGIN;
+    } else {
+      top = rect.bottom + MARGIN;
+    }
+    this.noticeEl.style.left = `${left}px`;
+    this.noticeEl.style.top = `${top}px`;
+    this.noticeEl.style.visibility = "";
+  }
+  /** Clean up any notice elements (call on view close). */
+  destroy() {
+    var _a;
+    if (this.noticeTimeout !== null)
+      window.clearTimeout(this.noticeTimeout);
+    (_a = this.noticeEl) == null ? void 0 : _a.remove();
+    this.noticeEl = null;
+  }
+};
+var PreachFormatToolbar = class {
+  constructor(formatManager, bodyElGetter, containerEl) {
+    this.visible = false;
+    this.formatManager = formatManager;
+    this.bodyElGetter = bodyElGetter;
+    this.containerEl = containerEl;
+    this.toolbarEl = this.buildToolbar();
+    this.containerEl.appendChild(this.toolbarEl);
+    this.selectionChangeHandler = () => this.onSelectionChange();
+    document.addEventListener("selectionchange", this.selectionChangeHandler);
+  }
+  buildToolbar() {
+    const bar = document.createElement("div");
+    bar.className = "preach-inline-format-bar";
+    bar.setAttribute("aria-label", "Format selection");
+    const makeBtn = (label, title, wrapper, extraClass) => {
+      const btn = document.createElement("button");
+      btn.className = "preach-inline-fmt-btn" + (extraClass ? " " + extraClass : "");
+      btn.setAttribute("aria-label", title);
+      btn.setAttribute("title", title);
+      btn.style.userSelect = "none";
+      btn.style.webkitUserSelect = "none";
+      if (label === "H") {
+        btn.innerHTML = '<span style="display:inline-block;width:13px;height:13px;background:#ffd24a;border-radius:2px;vertical-align:middle;"></span>';
+      } else {
+        btn.textContent = label;
+      }
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentBody = this.bodyElGetter();
+        if (!currentBody) {
+          this.hide();
+          return;
+        }
+        const result = this.formatManager.captureFromSelection(currentBody);
+        if (!result) {
+          this.hide();
+          return;
+        }
+        void this.formatManager.applyFormat(wrapper).then(() => {
+          var _a;
+          this.hide();
+          (_a = window.getSelection()) == null ? void 0 : _a.removeAllRanges();
+        });
+      });
+      bar.appendChild(btn);
+    };
+    makeBtn("B", "Bold", FORMAT_BOLD, "preach-inline-fmt-btn--bold");
+    makeBtn("I", "Italic", FORMAT_ITALIC, "preach-inline-fmt-btn--italic");
+    makeBtn("U", "Underline", FORMAT_UNDERLINE, "preach-inline-fmt-btn--underline");
+    makeBtn("H", "Highlight", FORMAT_HIGHLIGHT, "preach-inline-fmt-btn--highlight");
+    return bar;
+  }
+  onSelectionChange() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+      this.hide();
+      return;
+    }
+    const selectedText = sel.toString().trim();
+    if (!selectedText) {
+      this.hide();
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const currentBody = this.bodyElGetter();
+    if (!currentBody || !currentBody.contains(range.commonAncestorContainer)) {
+      this.hide();
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    this.position(rect);
+    this.show();
+  }
+  position(rect) {
+    const TOOLBAR_H = 52;
+    const MARGIN = 8;
+    const vpW = window.innerWidth;
+    const toolbarW = this.toolbarEl.offsetWidth || 200;
+    const midX = rect.left + rect.width / 2;
+    let left = midX - toolbarW / 2;
+    left = Math.max(8, Math.min(vpW - toolbarW - 8, left));
+    let top;
+    if (rect.top > TOOLBAR_H + MARGIN) {
+      top = rect.top - TOOLBAR_H - MARGIN;
+    } else {
+      top = rect.bottom + MARGIN;
+    }
+    this.toolbarEl.style.left = `${left}px`;
+    this.toolbarEl.style.top = `${top}px`;
+  }
+  show() {
+    if (!this.visible) {
+      this.toolbarEl.classList.add("preach-inline-format-bar--visible");
+      this.visible = true;
+    }
+  }
+  hide() {
+    if (this.visible) {
+      this.toolbarEl.classList.remove("preach-inline-format-bar--visible");
+      this.visible = false;
+    }
+  }
+  destroy() {
+    document.removeEventListener("selectionchange", this.selectionChangeHandler);
+    this.toolbarEl.remove();
+  }
+};
+
 // src/preach-view.ts
 var PREACH_VIEW_TYPE = "preach-md-view";
 function extractHeadings(markdown, level) {
@@ -999,6 +1383,9 @@ var PreachView = class extends import_obsidian2.ItemView {
     // Exit confirm state
     this.exitConfirming = false;
     this.exitConfirmTimeout = null;
+    this.preachFormatToolbar = null;
+    // Current preach body element (replaced on each renderFile; toolbar queries via getter)
+    this.preachBodyEl = null;
     // Parsed blocks (kept in sync after each renderFile call)
     this.blocks = [];
     // View header (hidden while preach mode is active)
@@ -1045,7 +1432,13 @@ var PreachView = class extends import_obsidian2.ItemView {
       this.renderComponent,
       ""
     );
+    this.formatManager = new FormatManager(this.app, this.file);
     this.buildUI();
+    this.preachFormatToolbar = new PreachFormatToolbar(
+      this.formatManager,
+      () => this.preachBodyEl,
+      this.containerEl
+    );
     await this.requestWakeLock();
     this.suppressEdgeSwipes();
     if (this.file) {
@@ -1072,10 +1465,15 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.timer.start();
   }
   async onClose() {
+    var _a, _b;
     if (this.idleTimeout !== null) {
       window.clearTimeout(this.idleTimeout);
       this.idleTimeout = null;
     }
+    (_a = this.preachFormatToolbar) == null ? void 0 : _a.destroy();
+    this.preachFormatToolbar = null;
+    (_b = this.formatManager) == null ? void 0 : _b.destroy();
+    this.preachBodyEl = null;
     this.cleanupEditUI();
     if (this.viewHeaderEl) {
       this.viewHeaderEl.classList.remove("preach-view-header--hidden");
@@ -1098,6 +1496,9 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.file = file;
     if (this.highlightManager) {
       this.highlightManager.updateFile(file);
+    }
+    if (this.formatManager) {
+      this.formatManager.updateFile(file);
     }
     if (this.scrollEl) {
       await this.renderFile(file);
@@ -1206,6 +1607,10 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.blocks = blocks;
     this.highlightManager.attachBlocks(blocks);
     const body = this.scrollEl.createEl("div", { cls: "preach-body" });
+    this.preachBodyEl = body;
+    if (this.formatManager) {
+      this.formatManager.updateBlocks(blocks);
+    }
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
       const wrapper = body.createEl("div", {
