@@ -979,6 +979,9 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.file = null;
     // Persisted scroll position within this session
     this.savedScrollTop = 0;
+    // Back-pill tracking
+    this.preachLeaf = null;
+    this.editPills = /* @__PURE__ */ new Map();
     // Wake lock
     this.wakeLock = null;
     // Edge-swipe suppression
@@ -1043,9 +1046,21 @@ var PreachView = class extends import_obsidian2.ItemView {
         }
       })
     );
+    this.preachLeaf = this.leaf;
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        this.maybeInjectBackPill(leaf);
+      })
+    );
+    this.registerEvent(
+      this.app.workspace.on("layout-change", () => {
+        this.pruneEditPills();
+      })
+    );
     this.timer.start();
   }
   async onClose() {
+    this.cleanupEditPills();
     if (this.viewHeaderEl) {
       this.viewHeaderEl.classList.remove("preach-view-header--hidden");
       this.viewHeaderEl = null;
@@ -1284,12 +1299,55 @@ var PreachView = class extends import_obsidian2.ItemView {
     );
     if (existingLeaf) {
       this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+      setTimeout(() => this.maybeInjectBackPill(existingLeaf), 0);
     } else {
       const leaf = this.app.workspace.getLeaf("tab");
       if (this.file) {
         void leaf.openFile(this.file, { active: true });
+        setTimeout(() => this.maybeInjectBackPill(leaf), 0);
       }
     }
+  }
+  // Back-pill: inject a floating button into editor leaves that show the sermon file
+  maybeInjectBackPill(leaf) {
+    if (!leaf || !this.file || leaf === this.preachLeaf)
+      return;
+    const leafFile = leaf.view.file;
+    if ((leafFile == null ? void 0 : leafFile.path) !== this.file.path)
+      return;
+    if (this.editPills.has(leaf))
+      return;
+    const host = leaf.view.containerEl;
+    const pill = document.createElement("button");
+    pill.className = "preach-back-pill";
+    pill.textContent = "\u2190 Preach";
+    pill.setAttribute("aria-label", "Back to preach mode");
+    pill.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.preachLeaf) {
+        this.app.workspace.setActiveLeaf(this.preachLeaf, { focus: true });
+      }
+    });
+    host.appendChild(pill);
+    this.editPills.set(leaf, pill);
+  }
+  // Remove pills for leaves that are no longer in the workspace
+  pruneEditPills() {
+    for (const [leaf, pill] of this.editPills) {
+      if (!pill.isConnected) {
+        pill.remove();
+        this.editPills.delete(leaf);
+      }
+    }
+  }
+  // Remove all pills - called when preach mode exits
+  cleanupEditPills() {
+    for (const [, pill] of this.editPills) {
+      pill.remove();
+    }
+    this.editPills.clear();
+    this.preachLeaf = null;
   }
   // Screen wake lock
   async requestWakeLock() {

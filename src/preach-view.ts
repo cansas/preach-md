@@ -53,6 +53,10 @@ export class PreachView extends ItemView {
 	// Persisted scroll position within this session
 	private savedScrollTop = 0;
 
+	// Back-pill tracking
+	private preachLeaf: WorkspaceLeaf | null = null;
+	private editPills: Map<WorkspaceLeaf, HTMLElement> = new Map();
+
 	// DOM elements (named to avoid conflict with ItemView.contentEl)
 	private scrollEl!: HTMLElement;
 	private timerEl!: HTMLElement;
@@ -156,10 +160,29 @@ export class PreachView extends ItemView {
 			})
 		);
 
+		// Track this leaf so pills can switch focus back to it
+		this.preachLeaf = this.leaf;
+
+		// Inject back-pill whenever a new leaf becomes active
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				this.maybeInjectBackPill(leaf);
+			})
+		);
+
+		// Remove pills for leaves that have been closed
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => {
+				this.pruneEditPills();
+			})
+		);
+
 		this.timer.start();
 	}
 
 	async onClose(): Promise<void> {
+		this.cleanupEditPills();
+
 		// Restore the view-header when leaving preach mode
 		if (this.viewHeaderEl) {
 			this.viewHeaderEl.classList.remove("preach-view-header--hidden");
@@ -452,12 +475,61 @@ export class PreachView extends ItemView {
 
 		if (existingLeaf) {
 			this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+			setTimeout(() => this.maybeInjectBackPill(existingLeaf), 0);
 		} else {
 			const leaf = this.app.workspace.getLeaf("tab");
 			if (this.file) {
 				void leaf.openFile(this.file, { active: true });
+				setTimeout(() => this.maybeInjectBackPill(leaf), 0);
 			}
 		}
+	}
+
+	// Back-pill: inject a floating button into editor leaves that show the sermon file
+	private maybeInjectBackPill(leaf: WorkspaceLeaf | null): void {
+		if (!leaf || !this.file || leaf === this.preachLeaf) return;
+
+		const leafFile = (leaf.view as { file?: TFile }).file;
+		if (leafFile?.path !== this.file.path) return;
+
+		if (this.editPills.has(leaf)) return;
+
+		const host = leaf.view.containerEl;
+
+		const pill = document.createElement("button");
+		pill.className = "preach-back-pill";
+		pill.textContent = "← Preach";
+		pill.setAttribute("aria-label", "Back to preach mode");
+
+		pill.addEventListener("pointerdown", (e: PointerEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			if (this.preachLeaf) {
+				this.app.workspace.setActiveLeaf(this.preachLeaf, { focus: true });
+			}
+		});
+
+		host.appendChild(pill);
+		this.editPills.set(leaf, pill);
+	}
+
+	// Remove pills for leaves that are no longer in the workspace
+	private pruneEditPills(): void {
+		for (const [leaf, pill] of this.editPills) {
+			if (!pill.isConnected) {
+				pill.remove();
+				this.editPills.delete(leaf);
+			}
+		}
+	}
+
+	// Remove all pills - called when preach mode exits
+	private cleanupEditPills(): void {
+		for (const [, pill] of this.editPills) {
+			pill.remove();
+		}
+		this.editPills.clear();
+		this.preachLeaf = null;
 	}
 
 	// Screen wake lock
