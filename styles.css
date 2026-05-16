@@ -84,8 +84,10 @@
 	inset: 0;
 	overflow-y: auto;
 	overflow-x: hidden;
-	-webkit-overflow-scrolling: touch;
 	scroll-behavior: auto; /* programmatic scrolls use scrollIntoView */
+	/* Note: -webkit-overflow-scrolling: touch removed in 0.6.2.
+	   Its composited scroll layer broke iOS long-press-release word
+	   selection. Modern iOS has momentum scrolling by default. */
 }
 
 /* No accidental tap targets in the content area */
