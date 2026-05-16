@@ -84,6 +84,19 @@ For the best experience, open Preach MD in a non-stacked tab. When tabs are stac
 
 ---
 
+## Privacy
+
+Preach MD makes **no network requests**. Everything runs locally:
+
+- Sermon content stays in your vault. Nothing is sent anywhere.
+- Scripture popups read CSB Bible files from your own vault folder.
+- The plugin uses the browser **Wake Lock API** to keep your iPad's screen from sleeping during preach mode. This is a local device API, not a network call.
+- No analytics, no telemetry, no external services.
+
+Code reviewers: the `nav.wakeLock.request("screen")` call in `src/preach-view.ts` is the Wake Lock API mentioned above, not a network request.
+
+---
+
 ## License
 
 MIT
