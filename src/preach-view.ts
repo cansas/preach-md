@@ -9,6 +9,7 @@ import type PreachMDPlugin from "./main";
 import { PreachTimer } from "./timer";
 import { HighlightManager, parseBlocks } from "./highlight";
 import { ScriptureExpander } from "./scripture";
+import { FormatManager, FORMAT_BOLD, FORMAT_ITALIC, FORMAT_UNDERLINE, FORMAT_HIGHLIGHT } from "./format";
 
 export const PREACH_VIEW_TYPE = "preach-md-view";
 
@@ -90,6 +91,10 @@ export class PreachView extends ItemView {
 	// Feature managers
 	private highlightManager!: HighlightManager;
 	private scriptureExpander!: ScriptureExpander;
+	private formatManager!: FormatManager;
+
+	// Format toolbar (shown when format mode is active)
+	private formatToolbar!: HTMLElement;
 
 	// Parsed blocks (kept in sync after each renderFile call)
 	private blocks: ReturnType<typeof parseBlocks> = [];
@@ -150,6 +155,7 @@ export class PreachView extends ItemView {
 			this.renderComponent,
 			""
 		);
+		this.formatManager = new FormatManager(this.app, this.file);
 
 		this.buildUI();
 		await this.requestWakeLock();
@@ -222,6 +228,9 @@ export class PreachView extends ItemView {
 		if (this.highlightManager) {
 			this.highlightManager.updateFile(file);
 		}
+		if (this.formatManager) {
+			this.formatManager.updateFile(file);
+		}
 		if (this.scrollEl) {
 			await this.renderFile(file);
 		}
@@ -289,8 +298,7 @@ export class PreachView extends ItemView {
 		this.formatBtn.addEventListener("pointerdown", (e: PointerEvent) => {
 			e.stopPropagation();
 			this.resetIdleTimer();
-			// Wired in Phase 3
-			console.log("format button tapped - not yet wired");
+			this.formatManager.activate();
 		});
 
 		// Edit button
@@ -348,8 +356,76 @@ export class PreachView extends ItemView {
 			}
 		});
 
+		// Format toolbar (hidden until format mode activates)
+		this.formatToolbar = this.buildFormatToolbar(root);
+
+		// Wire format manager callbacks
+		this.formatManager.onActivate = () => {
+			this.scrollEl.addClass("preach-format-active");
+			this.formatToolbar.classList.remove("preach-format-toolbar--hidden");
+			this.formatBtn.classList.add("preach-top-btn--format-on");
+		};
+		this.formatManager.onDeactivate = () => {
+			this.scrollEl.removeClass("preach-format-active");
+			this.formatToolbar.classList.add("preach-format-toolbar--hidden");
+			this.formatBtn.classList.remove("preach-top-btn--format-on");
+		};
+
 		// Start idle timer immediately
 		this.resetIdleTimer();
+	}
+
+	/** Build the secondary format toolbar and return it (initially hidden). */
+	private buildFormatToolbar(root: HTMLElement): HTMLElement {
+		const toolbar = root.createEl("div", {
+			cls: "preach-format-toolbar preach-format-toolbar--hidden",
+		});
+
+		const makeFormatBtn = (label: string, title: string, handler: () => void): HTMLElement => {
+			const btn = toolbar.createEl("button", {
+				cls: "preach-fmt-btn",
+				attr: { "aria-label": title, title },
+			});
+			btn.textContent = label;
+			// Capture selection on pointerdown BEFORE focus change clears it,
+			// then apply format. preventDefault keeps the text selection alive.
+			btn.addEventListener("pointerdown", (e: PointerEvent) => {
+				e.preventDefault();
+				e.stopPropagation();
+				const captured = this.formatManager.captureCurrentSelection(this.scrollEl);
+				if (captured) {
+					handler();
+				}
+			});
+			return btn;
+		};
+
+		makeFormatBtn("B", "Bold", () => {
+			void this.formatManager.applyFormat(FORMAT_BOLD);
+		});
+		makeFormatBtn("I", "Italic", () => {
+			void this.formatManager.applyFormat(FORMAT_ITALIC);
+		});
+		makeFormatBtn("U", "Underline", () => {
+			void this.formatManager.applyFormat(FORMAT_UNDERLINE);
+		});
+		makeFormatBtn("H", "Highlight", () => {
+			void this.formatManager.applyFormat(FORMAT_HIGHLIGHT);
+		});
+
+		// Done button
+		const doneBtn = toolbar.createEl("button", {
+			cls: "preach-fmt-btn preach-fmt-btn--done",
+			attr: { "aria-label": "Done formatting", title: "Done" },
+			text: "Done",
+		});
+		doneBtn.addEventListener("pointerdown", (e: PointerEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this.formatManager.deactivate();
+		});
+
+		return toolbar;
 	}
 
 	// Idle-fade: show controls, then fade after 3 seconds of no interaction.
@@ -378,8 +454,11 @@ export class PreachView extends ItemView {
 		// Keep a reference for scroll-sync in goToEdit
 		this.blocks = blocks;
 
-		// Store blocks in highlight manager
+		// Store blocks in highlight manager and format manager
 		this.highlightManager.attachBlocks(blocks);
+		if (this.formatManager) {
+			this.formatManager.updateBlocks(blocks);
+		}
 
 		const body = this.scrollEl.createEl("div", { cls: "preach-body" });
 
