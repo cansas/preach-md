@@ -95,11 +95,17 @@
 
 /* Allow text selection inside the preach body for inline formatting.
    Applied to descendants too so iOS WKWebView selects word-by-word
-   instead of from press point to end of body. */
+   instead of from press point to end of body.
+
+   -webkit-touch-callout: none suppresses iOS's native selection bar
+   (Copy / Look Up / Translate). Editor view keeps it because it's
+   useful there for copy/paste; preach view doesn't need it since
+   our format toolbar covers the only action that matters here. */
 .preach-body,
 .preach-body * {
 	-webkit-user-select: text;
 	user-select: text;
+	-webkit-touch-callout: none;
 }
 
 /* ------------------------------------------------------------------ */
