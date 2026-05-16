@@ -537,3 +537,37 @@
 .preach-view-header--hidden {
 	display: none;
 }
+
+/* ------------------------------------------------------------------ */
+/* Immersive mode - hide global Obsidian chrome while preach is active */
+/* Tab strip (.workspace-tab-header-container) is intentionally kept   */
+/* visible so the user can switch back from the edit tab.              */
+/* ------------------------------------------------------------------ */
+
+body.preach-md-active .workspace-ribbon {
+	display: none !important;
+}
+
+body.preach-md-active .status-bar {
+	display: none !important;
+}
+
+body.preach-md-active .mobile-toolbar {
+	display: none !important;
+}
+
+body.preach-md-active .workspace-split.mod-left-split {
+	display: none !important;
+}
+
+body.preach-md-active .workspace-split.mod-right-split {
+	display: none !important;
+}
+
+body.preach-md-active .workspace-drawer {
+	display: none !important;
+}
+
+body.preach-md-active .workspace-drawer-vault-switcher {
+	display: none !important;
+}

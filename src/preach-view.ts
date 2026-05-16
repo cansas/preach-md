@@ -85,6 +85,10 @@ export class PreachView extends ItemView {
 	// View header (hidden while preach mode is active)
 	private viewHeaderEl: HTMLElement | null = null;
 
+	// Sidebar collapse state - tracked per open so restore is accurate
+	private leftSplitWasOpen = false;
+	private rightSplitWasOpen = false;
+
 	constructor(leaf: WorkspaceLeaf, plugin: PreachMDPlugin) {
 		super(leaf);
 		this.plugin = plugin;
@@ -109,6 +113,16 @@ export class PreachView extends ItemView {
 			this.viewHeaderEl = leafContent.querySelector<HTMLElement>(".view-header");
 			if (this.viewHeaderEl) this.viewHeaderEl.classList.add("preach-view-header--hidden");
 		}
+
+		// Add body class so CSS can hide global chrome (ribbon, status bar, mobile toolbar, sidebars)
+		document.body.addClass("preach-md-active");
+
+		// Collapse sidebars and track whether they were open so onClose can restore them
+		const ws = this.app.workspace;
+		this.leftSplitWasOpen = !ws.leftSplit.collapsed;
+		this.rightSplitWasOpen = !ws.rightSplit.collapsed;
+		if (this.leftSplitWasOpen) ws.leftSplit.collapse();
+		if (this.rightSplitWasOpen) ws.rightSplit.collapse();
 
 		this.renderComponent = new Component();
 		this.renderComponent.load();
@@ -151,6 +165,16 @@ export class PreachView extends ItemView {
 			this.viewHeaderEl.classList.remove("preach-view-header--hidden");
 			this.viewHeaderEl = null;
 		}
+
+		// Remove body class to restore global chrome
+		document.body.removeClass("preach-md-active");
+
+		// Restore sidebars only if they were open before preach mode started
+		const ws = this.app.workspace;
+		if (this.leftSplitWasOpen) ws.leftSplit.expand();
+		if (this.rightSplitWasOpen) ws.rightSplit.expand();
+		this.leftSplitWasOpen = false;
+		this.rightSplitWasOpen = false;
 
 		this.timer.stop();
 		await this.releaseWakeLock();
@@ -429,7 +453,7 @@ export class PreachView extends ItemView {
 		if (existingLeaf) {
 			this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
 		} else {
-			const leaf = this.app.workspace.getLeaf(false);
+			const leaf = this.app.workspace.getLeaf("tab");
 			if (this.file) {
 				void leaf.openFile(this.file, { active: true });
 			}

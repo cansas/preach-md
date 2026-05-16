@@ -988,6 +988,9 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.exitConfirmTimeout = null;
     // View header (hidden while preach mode is active)
     this.viewHeaderEl = null;
+    // Sidebar collapse state - tracked per open so restore is accurate
+    this.leftSplitWasOpen = false;
+    this.rightSplitWasOpen = false;
     this.plugin = plugin;
   }
   getViewType() {
@@ -1006,6 +1009,14 @@ var PreachView = class extends import_obsidian2.ItemView {
       if (this.viewHeaderEl)
         this.viewHeaderEl.classList.add("preach-view-header--hidden");
     }
+    document.body.addClass("preach-md-active");
+    const ws = this.app.workspace;
+    this.leftSplitWasOpen = !ws.leftSplit.collapsed;
+    this.rightSplitWasOpen = !ws.rightSplit.collapsed;
+    if (this.leftSplitWasOpen)
+      ws.leftSplit.collapse();
+    if (this.rightSplitWasOpen)
+      ws.rightSplit.collapse();
     this.renderComponent = new import_obsidian2.Component();
     this.renderComponent.load();
     this.highlightManager = new HighlightManager(
@@ -1039,6 +1050,14 @@ var PreachView = class extends import_obsidian2.ItemView {
       this.viewHeaderEl.classList.remove("preach-view-header--hidden");
       this.viewHeaderEl = null;
     }
+    document.body.removeClass("preach-md-active");
+    const ws = this.app.workspace;
+    if (this.leftSplitWasOpen)
+      ws.leftSplit.expand();
+    if (this.rightSplitWasOpen)
+      ws.rightSplit.expand();
+    this.leftSplitWasOpen = false;
+    this.rightSplitWasOpen = false;
     this.timer.stop();
     await this.releaseWakeLock();
     this.restoreEdgeSwipes();
@@ -1266,7 +1285,7 @@ var PreachView = class extends import_obsidian2.ItemView {
     if (existingLeaf) {
       this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
     } else {
-      const leaf = this.app.workspace.getLeaf(false);
+      const leaf = this.app.workspace.getLeaf("tab");
       if (this.file) {
         void leaf.openFile(this.file, { active: true });
       }
