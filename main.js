@@ -1380,6 +1380,8 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.wakeLock = null;
     // Edge-swipe suppression
     this.touchHandler = null;
+    // Custom long-press-to-select-word handler cleanup
+    this.longPressCleanup = null;
     // Exit confirm state
     this.exitConfirming = false;
     this.exitConfirmTimeout = null;
@@ -1441,6 +1443,7 @@ var PreachView = class extends import_obsidian2.ItemView {
     );
     await this.requestWakeLock();
     this.suppressEdgeSwipes();
+    this.installLongPressSelect();
     if (this.file) {
       await this.renderFile(this.file);
     }
@@ -1475,6 +1478,10 @@ var PreachView = class extends import_obsidian2.ItemView {
     (_b = this.formatManager) == null ? void 0 : _b.destroy();
     this.preachBodyEl = null;
     this.cleanupEditUI();
+    if (this.longPressCleanup) {
+      this.longPressCleanup();
+      this.longPressCleanup = null;
+    }
     if (this.viewHeaderEl) {
       this.viewHeaderEl.classList.remove("preach-view-header--hidden");
       this.viewHeaderEl = null;
@@ -1889,6 +1896,94 @@ var PreachView = class extends import_obsidian2.ItemView {
     }
   }
   // Suppress edge-swipe gestures (Obsidian Mobile sidebar open)
+  // Custom long-press handler that selects just the word under the finger.
+  // Bypasses iOS WKWebView's broken word-boundary detection (which falls
+  // back to "select press point to end of container" on our DOM).
+  installLongPressSelect() {
+    const target = this.scrollEl;
+    let timer = null;
+    let startX = 0;
+    let startY = 0;
+    const cancel = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
+    const handleStart = (e) => {
+      if (e.touches.length !== 1) {
+        cancel();
+        return;
+      }
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      const el = e.target;
+      if (el == null ? void 0 : el.closest(".preach-scripture-ref, .preach-scripture-expand, button, [role=button]")) {
+        return;
+      }
+      cancel();
+      timer = window.setTimeout(() => {
+        timer = null;
+        this.selectWordAt(startX, startY);
+      }, 500);
+    };
+    const handleMove = (e) => {
+      if (timer === null)
+        return;
+      const t = e.touches[0];
+      if (!t)
+        return;
+      const dx = Math.abs(t.clientX - startX);
+      const dy = Math.abs(t.clientY - startY);
+      if (dx > 10 || dy > 10)
+        cancel();
+    };
+    const handleEnd = () => {
+      cancel();
+    };
+    target.addEventListener("touchstart", handleStart, { passive: true });
+    target.addEventListener("touchmove", handleMove, { passive: true });
+    target.addEventListener("touchend", handleEnd, { passive: true });
+    target.addEventListener("touchcancel", handleEnd, { passive: true });
+    this.longPressCleanup = () => {
+      target.removeEventListener("touchstart", handleStart);
+      target.removeEventListener("touchmove", handleMove);
+      target.removeEventListener("touchend", handleEnd);
+      target.removeEventListener("touchcancel", handleEnd);
+      cancel();
+    };
+  }
+  // Given viewport coordinates, find the word at that point and select it.
+  selectWordAt(x, y) {
+    var _a, _b;
+    const docWithCaret = document;
+    const caretRange = (_a = docWithCaret.caretRangeFromPoint) == null ? void 0 : _a.call(docWithCaret, x, y);
+    if (!caretRange)
+      return;
+    const node = caretRange.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE)
+      return;
+    const text = (_b = node.textContent) != null ? _b : "";
+    const offset = caretRange.startOffset;
+    const isWordChar = (ch) => /[\w'-]/.test(ch);
+    let start = offset;
+    while (start > 0 && isWordChar(text[start - 1]))
+      start--;
+    let end = offset;
+    while (end < text.length && isWordChar(text[end]))
+      end++;
+    if (start === end)
+      return;
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, end);
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
   suppressEdgeSwipes() {
     this.touchHandler = (e) => {
       if (e.touches.length === 1) {

@@ -96,12 +96,15 @@
 }
 
 /* Allow text selection inside the preach body for inline formatting.
-   Applied to descendants too so iOS WKWebView selects word-by-word
-   instead of from press point to end of body. */
+   user-select: text on descendants so iOS finds a tight selectable
+   container. -webkit-touch-callout: none suppresses iOS's broken
+   long-press auto-selection; our custom touch handler in preach-view.ts
+   sets the word selection manually. */
 .preach-body,
 .preach-body * {
 	-webkit-user-select: text;
 	user-select: text;
+	-webkit-touch-callout: none;
 }
 
 /* ------------------------------------------------------------------ */
