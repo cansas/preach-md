@@ -578,6 +578,10 @@ body.preach-md-active .workspace-drawer-vault-switcher {
 	display: none !important;
 }
 
+body.preach-md-active .workspace-tab-header-container {
+	display: none !important;
+}
+
 /* ------------------------------------------------------------------ */
 /* Editor format toolbar (injected into editor leaf when preach active) */
 /* ------------------------------------------------------------------ */

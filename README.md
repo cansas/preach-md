@@ -1,6 +1,6 @@
 # Preach MD
 
-An Obsidian plugin that turns any sermon note into a distraction-free preach-mode view. Designed for delivering sermons from an iPad - full screen, locked chrome, free scroll, and a live timer.
+An Obsidian plugin that turns any .md file into a distraction-free preach mode, optimised for delivering sermons or giving any kind of presentation from an iPad.
 
 Inspired by the Preach function in Logos Bible Software.
 
@@ -75,6 +75,12 @@ _Coming after iPad testing._
 
 - Reference-parsing approach ported from [obsidian-bible-linker](https://github.com/kuchejak/obsidian-bible-linker) by Jakub Kuchejda (MIT).
 - Mobile-compatible plugin patterns informed by [obsidian-bible-reference](https://github.com/tim-hub/obsidian-bible-reference) by tim-hub (MIT).
+
+---
+
+## Known limitations
+
+For the best experience, open Preach MD in a non-stacked tab. When tabs are stacked, the back-pill in the editor view and the auto-fading bottom buttons may sit in awkward positions, and the full preach surface gets squeezed into a panel.
 
 ---
 
