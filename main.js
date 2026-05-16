@@ -188,6 +188,8 @@ function parseBlocks(markdown) {
   const lines = body.split("\n");
   let i = 0;
   let charOffset = bodyStart;
+  const frontmatterLineCount = markdown.slice(0, bodyStart).split("\n").length - 1;
+  let lineNumber = frontmatterLineCount;
   while (i < lines.length) {
     const line = lines[i];
     if (/^```/.test(line) || /^~~~/.test(line)) {
@@ -196,9 +198,11 @@ function parseBlocks(markdown) {
     if (inCodeFence || line.trim() === "") {
       charOffset += line.length + 1;
       i++;
+      lineNumber++;
       continue;
     }
     const blockStartOffset = charOffset;
+    const blockStartLine = lineNumber;
     const blockLines = [];
     let inFence = inCodeFence;
     while (i < lines.length && lines[i].trim() !== "") {
@@ -208,6 +212,7 @@ function parseBlocks(markdown) {
       blockLines.push(lines[i]);
       charOffset += lines[i].length + 1;
       i++;
+      lineNumber++;
     }
     const blockText = blockLines.join("\n");
     const blockEnd = charOffset;
@@ -223,7 +228,9 @@ function parseBlocks(markdown) {
       start: blockStartOffset,
       end: blockEnd,
       content: blockText,
-      highlightable
+      highlightable,
+      startLine: blockStartLine,
+      startOffset: blockStartOffset
     });
   }
   return blocks;
@@ -959,6 +966,132 @@ var ScriptureExpander = class {
   }
 };
 
+// src/format.ts
+var FORMAT_BOLD = { open: "**", close: "**" };
+var FORMAT_ITALIC = { open: "*", close: "*" };
+var FORMAT_UNDERLINE = { open: "<u>", close: "</u>" };
+var FORMAT_HIGHLIGHT = { open: "==", close: "==" };
+var FormatManager = class {
+  constructor(app, file) {
+    this.blocks = [];
+    this.active = false;
+    // The selection captured on pointerdown (before focus changes clear it)
+    this.capturedSelection = null;
+    // Callbacks wired by PreachView
+    this.onActivate = null;
+    this.onDeactivate = null;
+    this.app = app;
+    this.file = file;
+  }
+  updateFile(file) {
+    this.file = file;
+  }
+  updateBlocks(blocks) {
+    this.blocks = blocks;
+  }
+  isActive() {
+    return this.active;
+  }
+  activate() {
+    var _a;
+    this.active = true;
+    this.capturedSelection = null;
+    (_a = this.onActivate) == null ? void 0 : _a.call(this);
+  }
+  deactivate() {
+    var _a;
+    this.active = false;
+    this.capturedSelection = null;
+    (_a = this.onDeactivate) == null ? void 0 : _a.call(this);
+  }
+  /**
+   * Called from a pointerdown handler on a format button.
+   * Must read window.getSelection() immediately - before focus changes lose it.
+   * The anchor node is walked up to find the enclosing .preach-block.
+   */
+  captureCurrentSelection(scrollEl) {
+    var _a;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0)
+      return false;
+    const selectedText = sel.toString().trim();
+    if (!selectedText)
+      return false;
+    let node = sel.anchorNode;
+    let blockEl = null;
+    while (node) {
+      if (node instanceof HTMLElement) {
+        if (node.classList.contains("preach-scripture-expand"))
+          return false;
+        if (node.classList.contains("preach-block")) {
+          blockEl = node;
+          break;
+        }
+      }
+      node = node.parentNode;
+    }
+    if (!blockEl)
+      return false;
+    const focusNode = sel.focusNode;
+    let focusBlockEl = null;
+    let fn = focusNode;
+    while (fn) {
+      if (fn instanceof HTMLElement && fn.classList.contains("preach-block")) {
+        focusBlockEl = fn;
+        break;
+      }
+      fn = fn.parentNode;
+    }
+    if (focusBlockEl !== blockEl) {
+      console.warn("preach-md format: selection spans multiple blocks, ignoring");
+      return false;
+    }
+    const blockIndex = parseInt((_a = blockEl.dataset.blockIndex) != null ? _a : "", 10);
+    if (isNaN(blockIndex))
+      return false;
+    this.capturedSelection = { text: selectedText, blockIndex };
+    return true;
+  }
+  /**
+   * Apply a format wrapper around the previously captured selection.
+   * Writes to the source file via vault.process().
+   */
+  async applyFormat(wrapper) {
+    if (!this.capturedSelection || !this.file)
+      return;
+    const { text: selectedText, blockIndex } = this.capturedSelection;
+    const block = this.blocks[blockIndex];
+    if (!block)
+      return;
+    const sourceContent = block.content;
+    let sourceIdx = sourceContent.indexOf(selectedText);
+    if (sourceIdx === -1) {
+      const stripped = sourceContent.replace(/[*_~=]/g, "");
+      const strippedIdx = stripped.indexOf(selectedText);
+      if (strippedIdx !== -1) {
+        let srcPos = 0;
+        let strippedCount = 0;
+        while (srcPos < sourceContent.length && strippedCount < strippedIdx) {
+          if (!/[*_~=]/.test(sourceContent[srcPos]))
+            strippedCount++;
+          srcPos++;
+        }
+        sourceIdx = srcPos;
+      }
+    }
+    if (sourceIdx === -1) {
+      console.warn("preach-md format: could not locate selected text in source block, ignoring");
+      return;
+    }
+    const absoluteStart = block.startOffset + sourceIdx;
+    const absoluteEnd = absoluteStart + selectedText.length;
+    await this.app.vault.process(this.file, (data) => {
+      return data.slice(0, absoluteStart) + wrapper.open + data.slice(absoluteStart, absoluteEnd) + wrapper.close + data.slice(absoluteEnd);
+    });
+    this.capturedSelection = null;
+  }
+};
+
 // src/preach-view.ts
 var PREACH_VIEW_TYPE = "preach-md-view";
 function extractHeadings(markdown, level) {
@@ -982,6 +1115,8 @@ var PreachView = class extends import_obsidian2.ItemView {
     // Back-pill tracking
     this.preachLeaf = null;
     this.editPills = /* @__PURE__ */ new Map();
+    // Idle-fade timeout handle
+    this.idleTimeout = null;
     // Wake lock
     this.wakeLock = null;
     // Edge-swipe suppression
@@ -989,6 +1124,8 @@ var PreachView = class extends import_obsidian2.ItemView {
     // Exit confirm state
     this.exitConfirming = false;
     this.exitConfirmTimeout = null;
+    // Parsed blocks (kept in sync after each renderFile call)
+    this.blocks = [];
     // View header (hidden while preach mode is active)
     this.viewHeaderEl = null;
     // Sidebar collapse state - tracked per open so restore is accurate
@@ -1033,6 +1170,7 @@ var PreachView = class extends import_obsidian2.ItemView {
       this.renderComponent,
       ""
     );
+    this.formatManager = new FormatManager(this.app, this.file);
     this.buildUI();
     await this.requestWakeLock();
     this.suppressEdgeSwipes();
@@ -1060,6 +1198,10 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.timer.start();
   }
   async onClose() {
+    if (this.idleTimeout !== null) {
+      window.clearTimeout(this.idleTimeout);
+      this.idleTimeout = null;
+    }
     this.cleanupEditPills();
     if (this.viewHeaderEl) {
       this.viewHeaderEl.classList.remove("preach-view-header--hidden");
@@ -1083,6 +1225,9 @@ var PreachView = class extends import_obsidian2.ItemView {
     if (this.highlightManager) {
       this.highlightManager.updateFile(file);
     }
+    if (this.formatManager) {
+      this.formatManager.updateFile(file);
+    }
     if (this.scrollEl) {
       await this.renderFile(file);
     }
@@ -1095,16 +1240,12 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.scrollEl = root.createEl("div", { cls: "preach-content" });
     this.scrollEl.addEventListener("scroll", () => {
       this.savedScrollTop = this.scrollEl.scrollTop;
+      this.resetIdleTimer();
     });
-    this.timerEl = root.createEl("div", { cls: "preach-timer-wrap" });
-    this.timer = new PreachTimer(this.timerEl, {
-      targetMinutes: this.plugin.settings.targetMinutes,
-      warnMinutes: this.plugin.settings.warnMinutes,
-      critMinutes: this.plugin.settings.critMinutes
-    });
-    const corners = root.createEl("div", { cls: "preach-corners" });
-    this.outlineBtn = corners.createEl("button", {
-      cls: "preach-corner preach-corner--top-left",
+    this.topBar = root.createEl("div", { cls: "preach-top-bar" });
+    const leftGroup = this.topBar.createEl("div", { cls: "preach-top-bar-group preach-top-bar-group--left" });
+    this.outlineBtn = leftGroup.createEl("button", {
+      cls: "preach-top-btn preach-top-btn--fadeable",
       attr: { "aria-label": "Outline", title: "Outline" }
     });
     const outlineSvg = this.outlineBtn.createSvg("svg", {
@@ -1115,40 +1256,67 @@ var PreachView = class extends import_obsidian2.ItemView {
     outlineSvg.createSvg("line", { attr: { x1: "3", y1: "18", x2: "18", y2: "18" } });
     this.outlineBtn.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
+      this.resetIdleTimer();
       this.toggleOutline();
     });
-    const exitWrap = corners.createEl("div", {
-      cls: "preach-corner-wrap preach-corner-wrap--top-right"
+    const centreGroup = this.topBar.createEl("div", { cls: "preach-top-bar-group preach-top-bar-group--centre" });
+    this.timerEl = centreGroup.createEl("div", { cls: "preach-timer-wrap" });
+    this.timer = new PreachTimer(this.timerEl, {
+      targetMinutes: this.plugin.settings.targetMinutes,
+      warnMinutes: this.plugin.settings.warnMinutes,
+      critMinutes: this.plugin.settings.critMinutes
     });
-    this.exitChip = exitWrap.createEl("span", {
-      cls: "preach-exit-chip",
-      text: "Exit?"
+    const rightGroup = this.topBar.createEl("div", { cls: "preach-top-bar-group preach-top-bar-group--right" });
+    this.formatBtn = rightGroup.createEl("button", {
+      cls: "preach-top-btn preach-top-btn--fadeable preach-format-btn",
+      attr: { "aria-label": "Format text", title: "Format" }
     });
-    this.exitBtn = exitWrap.createEl("button", {
-      cls: "preach-corner preach-corner--top-right",
-      attr: { "aria-label": "Exit preach mode", title: "Exit" }
+    const formatSvg = this.formatBtn.createSvg("svg", {
+      attr: { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }
     });
-    const exitSvg = this.exitBtn.createSvg("svg", {
-      attr: { xmlns: "http://www.w3.org/2000/svg", width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }
-    });
-    exitSvg.createSvg("line", { attr: { x1: "18", y1: "6", x2: "6", y2: "18" } });
-    exitSvg.createSvg("line", { attr: { x1: "6", y1: "6", x2: "18", y2: "18" } });
-    this.exitBtn.addEventListener("pointerdown", (e) => {
+    formatSvg.createSvg("polyline", { attr: { points: "4 7 4 4 20 4 20 7" } });
+    formatSvg.createSvg("line", { attr: { x1: "9", y1: "20", x2: "15", y2: "20" } });
+    formatSvg.createSvg("line", { attr: { x1: "12", y1: "4", x2: "12", y2: "20" } });
+    this.formatBtn.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
-      this.handleExit();
+      this.resetIdleTimer();
+      this.formatManager.activate();
     });
-    this.editBtn = corners.createEl("button", {
-      cls: "preach-corner preach-corner--bottom-right",
+    this.editBtn = rightGroup.createEl("button", {
+      cls: "preach-top-btn preach-top-btn--fadeable",
       attr: { "aria-label": "Edit note", title: "Edit" }
     });
     const editSvg = this.editBtn.createSvg("svg", {
-      attr: { xmlns: "http://www.w3.org/2000/svg", width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }
+      attr: { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }
     });
     editSvg.createSvg("path", { attr: { d: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" } });
     editSvg.createSvg("path", { attr: { d: "M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" } });
     this.editBtn.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
+      this.resetIdleTimer();
       this.goToEdit();
+    });
+    const exitWrap = rightGroup.createEl("div", { cls: "preach-exit-wrap preach-top-btn--fadeable" });
+    this.exitChip = exitWrap.createEl("span", {
+      cls: "preach-exit-chip",
+      text: "Exit?"
+    });
+    this.exitBtn = exitWrap.createEl("button", {
+      cls: "preach-top-btn",
+      attr: { "aria-label": "Exit preach mode", title: "Exit" }
+    });
+    const exitSvg = this.exitBtn.createSvg("svg", {
+      attr: { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" }
+    });
+    exitSvg.createSvg("line", { attr: { x1: "18", y1: "6", x2: "6", y2: "18" } });
+    exitSvg.createSvg("line", { attr: { x1: "6", y1: "6", x2: "18", y2: "18" } });
+    this.exitBtn.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      this.resetIdleTimer();
+      this.handleExit();
+    });
+    this.scrollEl.addEventListener("pointerdown", () => {
+      this.resetIdleTimer();
     });
     this.highlightManager.init(null, this.scrollEl, this.scrollEl);
     this.overlayEl = root.createEl("div", {
@@ -1159,6 +1327,76 @@ var PreachView = class extends import_obsidian2.ItemView {
         this.closeOutline();
       }
     });
+    this.formatToolbar = this.buildFormatToolbar(root);
+    this.formatManager.onActivate = () => {
+      this.scrollEl.addClass("preach-format-active");
+      this.formatToolbar.classList.remove("preach-format-toolbar--hidden");
+      this.formatBtn.classList.add("preach-top-btn--format-on");
+    };
+    this.formatManager.onDeactivate = () => {
+      this.scrollEl.removeClass("preach-format-active");
+      this.formatToolbar.classList.add("preach-format-toolbar--hidden");
+      this.formatBtn.classList.remove("preach-top-btn--format-on");
+    };
+    this.resetIdleTimer();
+  }
+  /** Build the secondary format toolbar and return it (initially hidden). */
+  buildFormatToolbar(root) {
+    const toolbar = root.createEl("div", {
+      cls: "preach-format-toolbar preach-format-toolbar--hidden"
+    });
+    const makeFormatBtn = (label, title, handler) => {
+      const btn = toolbar.createEl("button", {
+        cls: "preach-fmt-btn",
+        attr: { "aria-label": title, title }
+      });
+      btn.textContent = label;
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const captured = this.formatManager.captureCurrentSelection(this.scrollEl);
+        if (captured) {
+          handler();
+        }
+      });
+      return btn;
+    };
+    makeFormatBtn("B", "Bold", () => {
+      void this.formatManager.applyFormat(FORMAT_BOLD);
+    });
+    makeFormatBtn("I", "Italic", () => {
+      void this.formatManager.applyFormat(FORMAT_ITALIC);
+    });
+    makeFormatBtn("U", "Underline", () => {
+      void this.formatManager.applyFormat(FORMAT_UNDERLINE);
+    });
+    makeFormatBtn("H", "Highlight", () => {
+      void this.formatManager.applyFormat(FORMAT_HIGHLIGHT);
+    });
+    const doneBtn = toolbar.createEl("button", {
+      cls: "preach-fmt-btn preach-fmt-btn--done",
+      attr: { "aria-label": "Done formatting", title: "Done" },
+      text: "Done"
+    });
+    doneBtn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.formatManager.deactivate();
+    });
+    return toolbar;
+  }
+  // Idle-fade: show controls, then fade after 3 seconds of no interaction.
+  resetIdleTimer() {
+    var _a;
+    (_a = this.topBar) == null ? void 0 : _a.classList.remove("preach-top-bar--idle");
+    if (this.idleTimeout !== null) {
+      window.clearTimeout(this.idleTimeout);
+    }
+    this.idleTimeout = window.setTimeout(() => {
+      var _a2;
+      (_a2 = this.topBar) == null ? void 0 : _a2.classList.add("preach-top-bar--idle");
+      this.idleTimeout = null;
+    }, 3e3);
   }
   // Render the file into the scroll area using block-by-block rendering
   async renderFile(file) {
@@ -1167,7 +1405,11 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.scrollEl.empty();
     const markdown = await this.app.vault.read(file);
     const blocks = parseBlocks(markdown);
+    this.blocks = blocks;
     this.highlightManager.attachBlocks(blocks);
+    if (this.formatManager) {
+      this.formatManager.updateBlocks(blocks);
+    }
     const body = this.scrollEl.createEl("div", { cls: "preach-body" });
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -1286,11 +1528,26 @@ var PreachView = class extends import_obsidian2.ItemView {
     this.exitChip.classList.remove("preach-exit-chip--visible");
     this.leaf.detach();
   }
-  // Edit round-trip: open the file in an edit leaf, preserving scroll
+  // Find the 0-indexed source line of the topmost visible preach block.
+  getTopmostVisibleLine() {
+    var _a;
+    const blockEls = this.scrollEl.querySelectorAll(".preach-block");
+    for (const el of Array.from(blockEls)) {
+      if (el.getBoundingClientRect().bottom > 0) {
+        const idx = parseInt((_a = el.dataset.blockIndex) != null ? _a : "", 10);
+        if (!isNaN(idx) && this.blocks[idx] !== void 0) {
+          return this.blocks[idx].startLine;
+        }
+      }
+    }
+    return null;
+  }
+  // Edit round-trip: open the file in an edit leaf, scrolled to current position.
   goToEdit() {
     if (!this.file)
       return;
     this.savedScrollTop = this.scrollEl.scrollTop;
+    const startLine = this.getTopmostVisibleLine();
     const existingLeaf = this.app.workspace.getLeavesOfType("markdown").find(
       (l) => {
         var _a, _b;
@@ -1299,11 +1556,20 @@ var PreachView = class extends import_obsidian2.ItemView {
     );
     if (existingLeaf) {
       this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+      if (startLine !== null) {
+        setTimeout(() => {
+          var _a, _b;
+          (_b = (_a = existingLeaf.view).setEphemeralState) == null ? void 0 : _b.call(_a, { line: startLine });
+        }, 0);
+      }
       setTimeout(() => this.maybeInjectBackPill(existingLeaf), 0);
     } else {
       const leaf = this.app.workspace.getLeaf("tab");
       if (this.file) {
-        void leaf.openFile(this.file, { active: true });
+        const eState = { mode: "source" };
+        if (startLine !== null)
+          eState.line = startLine;
+        void leaf.openFile(this.file, { active: true, eState });
         setTimeout(() => this.maybeInjectBackPill(leaf), 0);
       }
     }
