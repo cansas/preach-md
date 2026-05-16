@@ -93,8 +93,11 @@
 	-webkit-tap-highlight-color: transparent;
 }
 
-/* Allow text selection inside the preach body for inline formatting */
-.preach-body {
+/* Allow text selection inside the preach body for inline formatting.
+   Applied to descendants too so iOS WKWebView selects word-by-word
+   instead of from press point to end of body. */
+.preach-body,
+.preach-body * {
 	-webkit-user-select: text;
 	user-select: text;
 }
