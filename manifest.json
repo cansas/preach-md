@@ -1,9 +1,9 @@
 {
   "id": "preach-md",
   "name": "Preach MD",
-  "version": "0.6.11",
+  "version": "0.7.0",
   "minAppVersion": "1.4.0",
-  "description": "Full-screen mode for preaching sermons or delivering presentations from iPad. Free scroll, scripture tap-to-expand, timer, outline navigation.",
-  "author": "Don",
+  "description": "Full-screen mode for preaching sermons or delivering presentations from iPad. Fork with canon-numbered vault folder support.",
+  "author": "Brandon Brown",
   "isDesktopOnly": false
 }
