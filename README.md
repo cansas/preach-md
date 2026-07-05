@@ -1,4 +1,4 @@
-# Preach MD
+# Preach MD - Scripure Search Fork
 
 An Obsidian plugin that turns any .md file into a distraction-free preach mode, optimised for delivering sermons or giving any kind of presentation from an iPad.
 
