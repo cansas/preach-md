@@ -1,4 +1,6 @@
-# Preach MD - Scripure Search Fork
+# Preach MD — Fork with Canon-numbered Vault Support
+
+This is a fork of [overmoro/preach-md](https://github.com/overmoro/preach-md) (v0.6.11) that adds support for Scripture vaults using canon-numbered book folders (e.g. `40 - Matthew/Matt-03.md`) and `###### v1` verse headings. See [Bible vault format](#bible-vault-format) below.
 
 An Obsidian plugin that turns any .md file into a distraction-free preach mode, optimised for delivering sermons or giving any kind of presentation from an iPad.
 
@@ -23,12 +25,14 @@ Inspired by the Preach function in Logos Bible Software.
 
 ## Install
 
-1. Open Obsidian Settings.
-2. Go to **Community plugins** and click **Browse**.
-3. Search for **Preach MD**.
-4. Click **Install**, then **Enable**.
+This fork isn't on the community plugin list. Install via **BRAT** (Beta Reviewers Auto-update Tester):
 
-Alternatively, on iPad: Settings → Community plugins → Browse → search "Preach MD" → Install → Enable.
+1. Install the [BRAT](https://obsidian.md/plugins?id=obsidian42-brat) plugin from Community Plugins
+2. Go to BRAT settings → **Add Beta Plugin**
+3. Enter `cansas/preach-md`
+4. Enable **Preach MD** in Community Plugins
+
+Alternatively, [download the latest release](https://github.com/cansas/preach-md/releases) and extract `main.js`, `manifest.json`, and `styles.css` into `<vault>/.obsidian/plugins/preach-md/`.
 
 ---
 
@@ -61,7 +65,7 @@ References in code blocks and callouts are intentionally skipped.
 - **Amber warning** - timer turns amber at this many minutes remaining (default: 5)
 - **Red warning** - timer turns red at this many minutes remaining (default: 1)
 - **Section heading level** - heading level used for the outline (default: 2, i.e. `##`)
-| - **Bible folder path** - vault-relative path to your Bible chapter files (default: `30_Knowledge/Theology/Bible/CSB`). Each book should be a subfolder with files named like `John 3.md`, with verses under `###### N` headings.
+- **Bible folder path** - vault-relative path to your Bible chapter files. Set this to the translation folder in your vault (e.g. `Scripture (NRSVue)`, `Scripture (NIV)`, etc.). See [Bible vault format](#bible-vault-format) below for the expected folder structure.
 
 ---
 
@@ -80,7 +84,7 @@ This fork supports two folder conventions for your Bible chapter files:
 - Chapter files: `{Abbreviation} {Chapter}.md` (space, no zero-padding)
 - Verse headings: `###### 1`
 
-The fork auto-detects the convention: if the book has a known canon number, the numbered path is used; otherwise it falls back to the plain convention. This means both vault layouts work with the same plugin.
+The plugin auto-detects the convention: if the book has a known canon number, the numbered path is used; otherwise it falls back to the plain convention. Both vault layouts work with the same plugin.
 
 ---
 
@@ -92,8 +96,9 @@ _Coming after iPad testing._
 
 ## Credits
 
-- Reference-parsing approach ported from [obsidian-bible-linker](https://github.com/kuchejak/obsidian-bible-linker) by Jakub Kuchejda (MIT).
-- Mobile-compatible plugin patterns informed by [obsidian-bible-reference](https://github.com/tim-hub/obsidian-bible-reference) by tim-hub (MIT).
+- Original plugin by [Don (overmoro)](https://github.com/overmoro)
+- Reference-parsing approach ported from [obsidian-bible-linker](https://github.com/kuchejak/obsidian-bible-linker) by Jakub Kuchejda (MIT)
+- Mobile-compatible plugin patterns informed by [obsidian-bible-reference](https://github.com/tim-hub/obsidian-bible-reference) by tim-hub (MIT)
 
 ---
 
@@ -108,7 +113,7 @@ For the best experience, open Preach MD in a non-stacked tab. When tabs are stac
 Preach MD makes **no network requests**. Everything runs locally:
 
 - Sermon content stays in your vault. Nothing is sent anywhere.
-- Scripture popups read CSB Bible files from your own vault folder.
+- Scripture popups read Bible files from your own vault folder.
 - The plugin uses the browser **Wake Lock API** to keep your iPad's screen from sleeping during preach mode. This is a local device API, not a network call.
 - No analytics, no telemetry, no external services.
 
