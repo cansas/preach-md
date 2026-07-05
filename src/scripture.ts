@@ -9,6 +9,44 @@
 import { App, Component, MarkdownRenderer, TFile } from "obsidian";
 
 // ---------------------------------------------------------------------------
+// Book canon number (for numbered vault folder names like "40 - Matthew")
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps canonical book names to their standard Protestant canon order number.
+ * Used to resolve folder names like "40 - Matthew" instead of plain "Matthew".
+ */
+const BOOK_NUMBERS: Record<string, string> = {
+	"Genesis": "01", "Exodus": "02", "Leviticus": "03",
+	"Numbers": "04", "Deuteronomy": "05", "Joshua": "06",
+	"Judges": "07", "Ruth": "08", "1 Samuel": "09",
+	"2 Samuel": "10", "1 Kings": "11", "2 Kings": "12",
+	"1 Chronicles": "13", "2 Chronicles": "14", "Ezra": "15",
+	"Nehemiah": "16", "Esther": "17", "Job": "18",
+	"Psalms": "19", "Proverbs": "20", "Ecclesiastes": "21",
+	"Song of Solomon": "22", "Isaiah": "23", "Jeremiah": "24",
+	"Lamentations": "25", "Ezekiel": "26", "Daniel": "27",
+	"Hosea": "28", "Joel": "29", "Amos": "30",
+	"Obadiah": "31", "Jonah": "32", "Micah": "33",
+	"Nahum": "34", "Habakkuk": "35", "Zephaniah": "36",
+	"Haggai": "37", "Zechariah": "38", "Malachi": "39",
+	"Matthew": "40", "Mark": "41", "Luke": "42",
+	"John": "43", "Acts": "44", "Romans": "45",
+	"1 Corinthians": "46", "2 Corinthians": "47", "Galatians": "48",
+	"Ephesians": "49", "Philippians": "50", "Colossians": "51",
+	"1 Thessalonians": "52", "2 Thessalonians": "53", "1 Timothy": "54",
+	"2 Timothy": "55", "Titus": "56", "Philemon": "57",
+	"Hebrews": "58", "James": "59", "1 Peter": "60",
+	"2 Peter": "61", "1 John": "62", "2 John": "63",
+	"3 John": "64", "Jude": "65", "Revelation": "66",
+};
+
+/** Books that have only one chapter (filename is just "{prefix}.md" with no chapter number). */
+const SINGLE_CHAPTER_BOOKS = new Set([
+	"Obadiah", "Philemon", "2 John", "3 John", "Jude",
+]);
+
+// ---------------------------------------------------------------------------
 // Book name normalisation
 // ---------------------------------------------------------------------------
 
@@ -233,8 +271,10 @@ export function parseReferences(text: string): (ScriptureRef & { index: number; 
 const verseCache = new Map<string, Map<number, string>>();
 
 /**
- * Maps each canonical book name to the filename prefix used inside its
- * CSB vault folder. The chapter file is "{prefix} {chapter}.md".
+ * Maps each canonical book name to the abbreviated filename prefix used
+ * inside its chapter-file folder. For numbered (canon-order) vaults the
+ * chapter file is "{prefix}-{chapter}.md"; for plain vaults it is
+ * "{prefix} {chapter}.md".
  */
 const CHAPTER_PREFIX: Record<string, string> = {
 	"Genesis": "Gen",
@@ -307,17 +347,41 @@ const CHAPTER_PREFIX: Record<string, string> = {
 
 /**
  * Build the vault path to a chapter file.
- * Pattern: {csbFolder}/{Book}/{prefix} {Chapter}.md
- * where {prefix} is the abbreviated filename prefix used in the CSB vault.
+ *
+ * Supports two folder conventions, detected by whether the book has an entry
+ * in the BOOK_NUMBERS map:
+ *
+ *   Numbered (canon-order) folders — e.g. "40 - Matthew/Matt-03.md"
+ *     Pattern: {csbFolder}/{num} - {Book}/{prefix}-{chapter}.md
+ *     (zero-padded to 2 digits, dash separator)
+ *
+ *   Plain (CSB vault) folders — e.g. "Matthew/Matt 3.md"
+ *     Pattern: {csbFolder}/{Book}/{prefix} {chapter}.md
+ *
+ * Single-chapter books (Obadiah, Philemon, 2 John, 3 John, Jude) use
+ * "{prefix}.md" instead of "{prefix}-01.md".
  */
 function chapterPath(csbFolder: string, book: string, chapter: number): string {
 	const prefix = CHAPTER_PREFIX[book] ?? book;
+	const num = BOOK_NUMBERS[book];
+
+	if (num !== undefined) {
+		// Numbered folder: "40 - Matthew"
+		const folder = `${num} - ${book}`;
+
+		if (SINGLE_CHAPTER_BOOKS.has(book)) {
+			return `${csbFolder}/${folder}/${prefix}.md`;
+		}
+		return `${csbFolder}/${folder}/${prefix}-${String(chapter).padStart(2, "0")}.md`;
+	}
+
+	// Fallback: plain folder name (original CSB convention)
 	return `${csbFolder}/${book}/${prefix} ${chapter}.md`;
 }
 
 /**
  * Parse a chapter file and extract verse text by heading number.
- * Verses are under "###### N" headings.
+ * Verses are under "###### v1" or "###### 1" headings.
  */
 function parseChapterFile(content: string): Map<number, string> {
 	const map = new Map<number, string>();
@@ -333,7 +397,8 @@ function parseChapterFile(content: string): Map<number, string> {
 	};
 
 	for (const line of lines) {
-		const headingMatch = line.match(/^#{6}\s+(\d+)\s*$/);
+		// Match "###### v1", "###### 1", or "###### v.1" (with optional "." after "v")
+		const headingMatch = line.match(/^#{6}\s+v?\.?(\d+)\s*$/i);
 		if (headingMatch) {
 			flush();
 			currentVerse = parseInt(headingMatch[1], 10);

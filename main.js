@@ -321,6 +321,81 @@ var HighlightManager = class {
 
 // src/scripture.ts
 var import_obsidian = require("obsidian");
+var BOOK_NUMBERS = {
+  "Genesis": "01",
+  "Exodus": "02",
+  "Leviticus": "03",
+  "Numbers": "04",
+  "Deuteronomy": "05",
+  "Joshua": "06",
+  "Judges": "07",
+  "Ruth": "08",
+  "1 Samuel": "09",
+  "2 Samuel": "10",
+  "1 Kings": "11",
+  "2 Kings": "12",
+  "1 Chronicles": "13",
+  "2 Chronicles": "14",
+  "Ezra": "15",
+  "Nehemiah": "16",
+  "Esther": "17",
+  "Job": "18",
+  "Psalms": "19",
+  "Proverbs": "20",
+  "Ecclesiastes": "21",
+  "Song of Solomon": "22",
+  "Isaiah": "23",
+  "Jeremiah": "24",
+  "Lamentations": "25",
+  "Ezekiel": "26",
+  "Daniel": "27",
+  "Hosea": "28",
+  "Joel": "29",
+  "Amos": "30",
+  "Obadiah": "31",
+  "Jonah": "32",
+  "Micah": "33",
+  "Nahum": "34",
+  "Habakkuk": "35",
+  "Zephaniah": "36",
+  "Haggai": "37",
+  "Zechariah": "38",
+  "Malachi": "39",
+  "Matthew": "40",
+  "Mark": "41",
+  "Luke": "42",
+  "John": "43",
+  "Acts": "44",
+  "Romans": "45",
+  "1 Corinthians": "46",
+  "2 Corinthians": "47",
+  "Galatians": "48",
+  "Ephesians": "49",
+  "Philippians": "50",
+  "Colossians": "51",
+  "1 Thessalonians": "52",
+  "2 Thessalonians": "53",
+  "1 Timothy": "54",
+  "2 Timothy": "55",
+  "Titus": "56",
+  "Philemon": "57",
+  "Hebrews": "58",
+  "James": "59",
+  "1 Peter": "60",
+  "2 Peter": "61",
+  "1 John": "62",
+  "2 John": "63",
+  "3 John": "64",
+  "Jude": "65",
+  "Revelation": "66"
+};
+var SINGLE_CHAPTER_BOOKS = /* @__PURE__ */ new Set([
+  "Obadiah",
+  "Philemon",
+  "2 John",
+  "3 John",
+  "Jude"
+]);
 var BOOK_MAP = {
   // Genesis
   genesis: "Genesis",
@@ -763,6 +838,14 @@ var CHAPTER_PREFIX = {
 function chapterPath(csbFolder, book, chapter) {
   var _a;
   const prefix = (_a = CHAPTER_PREFIX[book]) != null ? _a : book;
+  const num = BOOK_NUMBERS[book];
+  if (num !== void 0) {
+    const folder = `${num} - ${book}`;
+    if (SINGLE_CHAPTER_BOOKS.has(book)) {
+      return `${csbFolder}/${folder}/${prefix}.md`;
+    }
+    return `${csbFolder}/${folder}/${prefix}-${String(chapter).padStart(2, "0")}.md`;
+  }
   return `${csbFolder}/${book}/${prefix} ${chapter}.md`;
 }
 function parseChapterFile(content) {
@@ -776,7 +859,7 @@ function parseChapterFile(content) {
     }
   };
   for (const line of lines) {
-    const headingMatch = line.match(/^#{6}\s+(\d+)\s*$/);
+    const headingMatch = line.match(/^#{6}\s+v?\.?(\d+)\s*$/i);
     if (headingMatch) {
       flush();
       currentVerse = parseInt(headingMatch[1], 10);
@@ -2024,7 +2107,7 @@ var PreachMDSettingTab = class extends import_obsidian3.PluginSettingTab {
     );
     new import_obsidian3.Setting(containerEl).setName("Scripture").setHeading();
     new import_obsidian3.Setting(containerEl).setName("Bible folder path").setDesc(
-      "Vault path to your bible chapter files. Each book is a subfolder; each chapter is a separate .md file."
+      'Vault path to your bible chapter files. Each book is a numbered subfolder (e.g. "40 - Matthew"); each chapter is a separate .md file.'
     ).addText(
       (text) => text.setPlaceholder("30_Knowledge/Theology/Bible/CSB").setValue(this.plugin.settings.csbFolderPath).onChange((value) => {
         this.plugin.settings.csbFolderPath = value.trim();

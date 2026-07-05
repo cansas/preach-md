@@ -61,7 +61,26 @@ References in code blocks and callouts are intentionally skipped.
 - **Amber warning** - timer turns amber at this many minutes remaining (default: 5)
 - **Red warning** - timer turns red at this many minutes remaining (default: 1)
 - **Section heading level** - heading level used for the outline (default: 2, i.e. `##`)
-- **Bible folder path** - vault-relative path to your Bible chapter files (default: `30_Knowledge/Theology/Bible/CSB`). Each book should be a subfolder with files named like `John 3.md`, with verses under `###### N` headings.
+| - **Bible folder path** - vault-relative path to your Bible chapter files (default: `30_Knowledge/Theology/Bible/CSB`). Each book should be a subfolder with files named like `John 3.md`, with verses under `###### N` headings.
+
+---
+
+## Bible vault format
+
+This fork supports two folder conventions for your Bible chapter files:
+
+**Numbered (canon-order) folders** — e.g. `40 - Matthew/Matt-03.md`
+- Each book folder is prefixed with its canon number: `{number} - {Book}`
+- Chapter files: `{Abbreviation}-{ZeroPaddedChapter}.md` (dash, zero-padded to 2 digits)
+- Verse headings: `###### v1` (optionally with lower/uppercase "v", with or without a dot)
+- Single-chapter books (Obadiah, Philemon, 2 John, 3 John, Jude) use `{Abbreviation}.md`
+
+**Plain folders** (original CSB convention) — e.g. `Matthew/Matt 3.md`
+- Each book folder uses the canonical book name directly
+- Chapter files: `{Abbreviation} {Chapter}.md` (space, no zero-padding)
+- Verse headings: `###### 1`
+
+The fork auto-detects the convention: if the book has a known canon number, the numbered path is used; otherwise it falls back to the plain convention. This means both vault layouts work with the same plugin.
 
 ---
 
